@@ -6,20 +6,21 @@ from PIL import Image
 from utils import natural_sort, pdf2images
 
 
-def render_pdf(filename):
+def render_pdf(filepath: str) -> list[Image.Image]:
     """ Transforms PDF to images and return them as an array. Intermediate
         images are deleted from OS.
     """
     # save images to temp directory
     temp_output_dir = tempfile.mkdtemp()
-    pdf2images(filename, temp_output_dir)
+    pdf2images(filepath, temp_output_dir)
 
     # load images to memory
-    img_paths = [join(temp_output_dir, filename)
-                 for filename in listdir(temp_output_dir)
-                 if isfile(join(temp_output_dir, filename)) and
-                 not filename.startswith('.') and
-                 filename.endswith('.png')]
+    img_paths = [
+        join(temp_output_dir, filename)
+        for filename in listdir(temp_output_dir)
+        if isfile(join(temp_output_dir, filename))
+        and not filename.startswith('.') and filename.endswith('.png')
+    ]
     img_paths = natural_sort(img_paths)
 
     images = []

@@ -1,17 +1,17 @@
 from os import makedirs, path, listdir
 from pathlib import Path
 from shutil import rmtree
+from subprocess import CalledProcessError
 import pytest
 from src.pdfigcapx import utils
 
 
-@pytest.mark.parametrize("test_input,expected", [
-    (['file-06.png', 'file-20.png', 'file-07.png'],
-     ['file-06.png', 'file-07.png', 'file-20.png']),
-    (['1-abc', '2-abc', '11-abc', '21-abc', '2-def'],
-     ['1-abc', '2-abc', '2-def', '11-abc', '21-abc']),
-    ([], [])
-])
+@pytest.mark.parametrize("test_input,expected",
+                         [(['file-06.png', 'file-20.png', 'file-07.png'
+                            ], ['file-06.png', 'file-07.png', 'file-20.png']),
+                          (['1-abc', '2-abc', '11-abc', '21-abc', '2-def'],
+                           ['1-abc', '2-abc', '2-def', '11-abc', '21-abc']),
+                          ([], [])])
 def test_natural_sort(test_input, expected):
     actual = utils.natural_sort(test_input)
 
@@ -25,6 +25,40 @@ def test_image2pdf():
     output_path = Path('./tests/output/pdf-1')
     makedirs(output_path, exist_ok=True)
     utils.pdf2images(file_path.resolve(), output_path.resolve())
+
     assert path.isdir(output_path) is True
     assert len(listdir(output_path)) == 20
     rmtree(output_path)
+
+
+def test_pdf2html_worked_correctly():
+    file_path = './tests/data/pdf-1.pdf'
+    output_path = './tests/output'
+
+    artifacts_folder = utils.pdf2html(file_path, output_path)
+    assert artifacts_folder == str(Path('./tests/output/xpdf_pdf-1').resolve())
+    rmtree(artifacts_folder)
+
+
+def test_pdf2html_cannot_export_to_existing_folder():
+    # pdftohtml error code 2: Target folder already exists
+    file_path = './tests/data/pdf-1.pdf'
+    output_path = './tests/output'
+
+    artifacts_folder = utils.pdf2html(file_path, output_path)
+    assert artifacts_folder == str(Path('./tests/output/xpdf_pdf-1').resolve())
+
+    with pytest.raises(CalledProcessError,
+                       match=r".*returned non-zero exit status 2.*"):
+        utils.pdf2html(file_path, output_path)
+    rmtree(artifacts_folder)
+
+
+def test_pdf2html_pdf_does_not_exist():
+    # pdftohtml error code 1: Error opening PDF
+    file_path = './tests/data/NON_EXISTENT.pdf'
+    output_path = './tests/output'
+
+    with pytest.raises(CalledProcessError,
+                       match=r".*returned non-zero exit status 1.*"):
+        utils.pdf2html(file_path, output_path)
