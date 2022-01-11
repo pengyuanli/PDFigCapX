@@ -53,3 +53,6 @@ Ground-truth annotations: /datasets/GXD200/GT_GXD200.json
 Dataset path: /datasets/PMC200  
 Description: The PMC-200 dataset contains 200 biomedical documents selected from the PubMed Central (PMC) Open Access Subset (2018). There are 1042 figures, 1032 captions, and 1032 figure and caption pairs in this dataset.  
 Ground-truth annotations: /datasets/PMC200/GT_PMC200.json  
+
+# Test
+pytest -s

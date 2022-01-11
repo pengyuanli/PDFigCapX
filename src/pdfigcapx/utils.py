@@ -6,6 +6,8 @@ from os.path import join
 from subprocess import check_output
 from typing import List
 from pathlib import Path
+from selenium import webdriver
+from .html_content import HtmlPage, TextBox
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -62,3 +64,26 @@ def pdf2html(file_path: str, output_base_path: str) -> str:
         str(output_folder.resolve())
     ])
     return str(output_folder.resolve())
+
+
+def extract_page_text_content(browser: webdriver.Chrome,
+                              html_page_path: str) -> HtmlPage:
+    """ Obtains page layout information and returns DIVs with text """
+    html_file = f"file://{html_page_path}"
+    browser.get(html_file)
+
+    page_layout = browser.find_element_by_xpath("/html/body/img")
+    text_elements = browser.find_elements_by_xpath("/html/body/div")
+
+    text_boxes = []
+    for elem in text_elements:
+        if len(elem.text) > 0:
+            text_boxes.append(
+                TextBox(x=elem.location['x'],
+                        y=elem.location['y'],
+                        width=elem.size['width'],
+                        height=elem.size['height']))
+    page = HtmlPage(width=page_layout.size['width'],
+                    height=page_layout.size['height'],
+                    text_boxes=text_boxes)
+    return page

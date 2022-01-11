@@ -2,6 +2,7 @@ from os import makedirs, path, listdir
 from pathlib import Path
 from shutil import rmtree
 from subprocess import CalledProcessError
+from selenium import webdriver
 import pytest
 from src.pdfigcapx import utils
 
@@ -62,3 +63,20 @@ def test_pdf2html_pdf_does_not_exist():
     with pytest.raises(CalledProcessError,
                        match=r".*returned non-zero exit status 1.*"):
         utils.pdf2html(file_path, output_path)
+
+
+def test_chromeExtractPageTextContent():
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument('--no-sandbox')
+    chrome_options.add_argument('--headless')
+    browser = webdriver.Chrome('chromedriver', options=chrome_options)
+
+    html_path_path = str(Path('./tests/data/htmls/page1.html').resolve())
+
+    try:
+        page = utils.extract_page_text_content(browser, html_path_path)
+        assert isinstance(page.width, int)
+        assert isinstance(page.height, int)
+        assert len(page.text_boxes) > 0
+    finally:
+        browser.quit()
