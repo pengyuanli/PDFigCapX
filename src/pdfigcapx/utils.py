@@ -79,10 +79,12 @@ def extract_page_text_content(browser: webdriver.Chrome,
     for elem in text_elements:
         if len(elem.text) > 0:
             text_boxes.append(
-                TextBox(x=elem.location['x'],
-                        y=elem.location['y'],
+                TextBox(x_top_left=elem.location['x'],
+                        y_top_left=elem.location['y'],
+                        x_top_right=elem.location['x'] + elem.size['width'],
                         width=elem.size['width'],
-                        height=elem.size['height']))
+                        height=elem.size['height'],
+                        text=elem.text))
     page = HtmlPage(width=page_layout.size['width'],
                     height=page_layout.size['height'],
                     text_boxes=text_boxes)

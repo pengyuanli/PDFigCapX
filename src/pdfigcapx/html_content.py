@@ -5,10 +5,12 @@ from dataclasses import dataclass
 @dataclass
 class TextBox:
     """ Represents a div container inside an HTML page """
-    x: int
-    y: int
+    x_top_left: int
+    y_top_left: int
+    x_top_right: int
     width: int
     height: int
+    text: str
 
 
 @dataclass
