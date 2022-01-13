@@ -80,3 +80,13 @@ def test_chromeExtractPageTextContent():
         assert len(page.text_boxes) > 0
     finally:
         browser.quit()
+
+
+# use to test the sort by common objects
+# [CountTuple(count=31, value=167),
+#  CountTuple(count=13, value=36),
+#  CountTuple(count=5, value=35),
+#  CountTuple(count=4, value=166),
+#  CountTuple(count=1, value=421),
+#  CountTuple(count=1, value=180),
+#  CountTuple(count=1, value=188)]

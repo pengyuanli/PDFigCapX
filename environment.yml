@@ -1,0 +1,10 @@
+name: pdfigcapx
+dependencies:
+  - python=3.7
+  - numpy
+  - pillow
+  - pytest
+  - matplotlib
+  - selenium
+  - ipykernel
+  - pylint

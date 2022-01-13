@@ -7,7 +7,7 @@ from subprocess import check_output
 from typing import List
 from pathlib import Path
 from selenium import webdriver
-from .html_content import HtmlPage, TextBox
+from .html_content import HtmlPage, TextBox, CountTuple
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -89,3 +89,16 @@ def extract_page_text_content(browser: webdriver.Chrome,
                     height=page_layout.size['height'],
                     text_boxes=text_boxes)
     return page
+
+
+def sort_by_most_common_value_desc(arr: List[int]) -> List[CountTuple]:
+    """ Count ocurrences of element in arr and return sorted tuples in desc 
+    order """
+    counts_per_value = [
+        CountTuple(value=val, count=arr.count(val)) for val in set(arr)
+    ]
+    # counts_per_value = [(val, arr.count(val)) for val in set(arr)]
+    # return sorted(counts_per_value, key=lambda x: x.count, reverse=True)
+    return sorted(counts_per_value,
+                  key=lambda x: (x.count, x.value),
+                  reverse=True)
