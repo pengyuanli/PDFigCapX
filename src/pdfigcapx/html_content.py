@@ -1,6 +1,6 @@
 """ Dataclasses for storing content of HTML pages """
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Tuple
 
 
 @dataclass
@@ -27,6 +27,22 @@ class CountTuple:
     """ Stored the number of times value appears """
     count: int
     value: int
+
+
+@dataclass
+class PageBoxesCounts:
+    x0s: List[int] = field(default_factory=list)
+    y0s: List[int] = field(default_factory=list)
+    heights: List[int] = field(default_factory=list)
+    widths: List[int] = field(default_factory=list)
+    x1s: List[int] = field(default_factory=list)
+    sorted_x0_counts: List[CountTuple] = field(default_factory=list)
+    sorted_width_counts: List[CountTuple] = field(default_factory=list)
+    sorted_height_counts: List[CountTuple] = field(default_factory=list)
+
+    # MISSING OUTPUT
+    def calc_y_range(self, page_height: int) -> Tuple[int, int]:
+        return (max(0, min(self.y0s)), min(page_height, max(self.y0s)))
 
 
 @dataclass
