@@ -82,6 +82,17 @@ def test_chromeExtractPageTextContent():
         browser.quit()
 
 
+def test_intersectionBetweeTwoSegments():
+    point_a0 = [2, 2]
+    point_a1 = [4, 3]
+    point_b0 = [6, 0]
+    point_b1 = [6, 3]
+
+    intersect = utils.intersect_two_segments(point_a0, point_a1, point_b0,
+                                             point_b1)
+    assert intersect == [6, 4]
+
+
 # use to test the sort by common objects
 # [CountTuple(count=31, value=167),
 #  CountTuple(count=13, value=36),

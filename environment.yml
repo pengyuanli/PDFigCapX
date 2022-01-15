@@ -6,5 +6,6 @@ dependencies:
   - pytest
   - matplotlib
   - selenium
+  - opencv
   - ipykernel
   - pylint

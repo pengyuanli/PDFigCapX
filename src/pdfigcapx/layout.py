@@ -50,13 +50,13 @@ class PdfLayout:
     def _count_elements(self, txtbox_size_diff: int) -> PageBoxesCounts:
         counts = PageBoxesCounts()
         for page in self.pages:
-            for text_box in page.text_boxes:
-                if len(text_box.text) > self.min_text_length:
-                    counts.x0s.append(text_box.x_top_left)
-                    counts.y0s.append(text_box.y_top_left)
-                    counts.x1s.append(text_box.x_top_right)
-                    counts.widths.append(text_box.width)
-                    counts.heights.append(text_box.height)
+            for text_line in page.text_lines:
+                if len(text_line.text) > self.min_text_length:
+                    counts.x0s.append(text_line.x_top_left)
+                    counts.y0s.append(text_line.y_top_left)
+                    counts.x1s.append(text_line.x_top_right)
+                    counts.widths.append(text_line.width)
+                    counts.heights.append(text_line.height)
         counts.sorted_x0_counts = sort_by_most_common_value_desc(counts.x0s)
         counts.sorted_width_counts = sort_by_most_common_value_desc(
             counts.widths)
