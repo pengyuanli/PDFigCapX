@@ -1,17 +1,20 @@
 """ Utility functions invoking system packages to process PDFs """
 
 from os import system
-from os.path import join
+from os.path import exists, join
 from pathlib import Path
 from re import split as re_split
 from subprocess import check_output
-from typing import List, Tuple
+from typing import List
 
 # from numpy import empty_like, dot, array
-# from pathlib import Path
-# from selenium import webdriver
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 
-# from .html_content import HtmlPage, TextLine, CountTuple
+from .models import HtmlPage, TextContainer
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -20,6 +23,7 @@ def natural_sort(arr: List[str]) -> List[str]:
     def convert(text):
         return int(text) if text.isdigit() else text.lower()
 
+    # pylint: disable=unnecessary-lambda-assignment
     alphanum_key = lambda key: [convert(c) for c in re_split("([0-9]+)", key)]
     return sorted(arr, key=alphanum_key)
 
@@ -33,15 +37,16 @@ def pdf2images(file_path: str, output_path: str, dpi=300) -> None:
     system(gs_cmd)
 
 
-def pdf2html(file_path: str, output_base_path: str) -> str:
-    """Converts PDF pages to HTML. Stores output content on a new folder
-    with name xpdf_{file_path name} at output_base_path.
+def pdf2html(file_path: str, output_base_path: str, new_folder_name: str) -> str:
+    """Converts PDF pages to HTML and stores it inside the output_base_path/new_folder_name
     Parameters
     ----------
     file_path : str
         Full path to the PDF document
     output_base_path: str
         Where to create the output folder with the HTML artifacts
+    new_folder_name: str
+        Folder to create inside output_base_path to store artifacts
     Returns
     -------
     str
@@ -54,11 +59,16 @@ def pdf2html(file_path: str, output_base_path: str) -> str:
         - Error code 2 for using an existing folder as output folder
         - Error code 3 for PDF permissions
         - Error code 99 for anything else (e.g. missing fonts)
+    Exception
+        If the output_base_path does not exist
     """
     pdftohtml = "pdftohtml"
 
+    if not exists(output_base_path):
+        raise Exception(f"output_base_path ${output_base_path} does not exist")
+
     document_path = Path(file_path)
-    output_name = f"xpdf_{document_path.stem}"
+    output_name = new_folder_name
     output_folder = Path(output_base_path) / output_name
 
     check_output(
@@ -67,34 +77,46 @@ def pdf2html(file_path: str, output_base_path: str) -> str:
     return str(output_folder.resolve())
 
 
-# def extract_page_text_content(
-#     browser: webdriver.Chrome, html_page_path: str
-# ) -> HtmlPage:
-#     """Obtains page layout information and returns DIVs with text"""
-#     html_file = f"file://{html_page_path}"
-#     browser.get(html_file)
+def launch_chromedriver():
+    """Start chromedriver in headless mode"""
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
 
-#     page_layout = browser.find_element_by_xpath("/html/body/img")
-#     text_elements = browser.find_elements_by_xpath("/html/body/div")
+    # service = Service(executable_path=ChromeDriverManager().install())
+    service = Service(executable_path="/usr/bin/chromedriver")
+    driver = webdriver.Chrome(service=service, options=chrome_options)
+    return driver
 
-#     text_lines = []
-#     for elem in text_elements:
-#         if len(elem.text) > 0:
-#             text_lines.append(
-#                 TextLine(
-#                     x0=elem.location["x"],
-#                     y0=elem.location["y"],
-#                     x1=elem.location["x"] + elem.size["width"],
-#                     y1=elem.location["y"] + elem.size["height"],
-#                     text=elem.text,
-#                 )
-#             )
-#     page = HtmlPage(
-#         width=page_layout.size["width"],
-#         height=page_layout.size["height"],
-#         text_lines=text_lines,
-#     )
-#     return page
+
+def extract_page_text_content(
+    browser: webdriver.Chrome, html_page_path: str
+) -> HtmlPage:
+    """Obtains page layout information and returns DIVs with text"""
+    html_file = f"file://{html_page_path}"
+    browser.get(html_file)
+
+    page_layout = browser.find_element(By.XPATH, "/html/body/img")
+    text_elements = browser.find_elements(By.XPATH, "/html/body/div")
+
+    text_lines = []
+    for elem in text_elements:
+        if len(elem.text) > 0:
+            text_lines.append(
+                TextContainer(
+                    x=elem.location["x"],
+                    y=elem.location["y"],
+                    width=elem.size["width"],
+                    height=elem.size["height"],
+                    text=elem.text,
+                )
+            )
+    page = HtmlPage(
+        width=page_layout.size["width"],
+        height=page_layout.size["height"],
+        text_containers=text_lines,
+    )
+    return page
 
 
 # def sort_by_most_common_value_desc(arr: List[int]) -> List[CountTuple]:

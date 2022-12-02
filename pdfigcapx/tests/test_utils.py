@@ -42,3 +42,35 @@ def test_pdf2images():
     print(utils.natural_sort(listdir(output_path)))
     assert len(listdir(output_path)) == 6
     rmtree(output_path)
+
+
+def test_pdf2html():
+    """HTML files are created on target directory"""
+    file_path = Path("./tests/data/pdf-1.pdf")
+    output_path = Path("./test/output/pdf-1-html")
+    new_folder_name = f"{file_path.stem}"
+    makedirs(output_path, exist_ok=True)
+    new_folder_path = utils.pdf2html(
+        file_path.resolve(), output_path.resolve(), new_folder_name
+    )
+    assert path.isdir(new_folder_path) is True
+    # PDF has 6 pages
+    html_docs = [x for x in listdir(new_folder_path) if ".html" in x]
+    png_images = [x for x in listdir(new_folder_path) if ".png" in x]
+    # html pages include an index.html extra page
+    assert len(html_docs) - 1 == len(png_images)
+    assert len(html_docs) - 1 == 6
+    rmtree(output_path)
+
+
+def test_chromedriver():
+    """Open an html page an extract layout and divs. Chromedriver should match
+    google-chrome binary number"""
+    file_path = Path("./tests/data/sample_html_page/page4.html")
+    browser = utils.launch_chromedriver()
+    page = utils.extract_page_text_content(browser, file_path.resolve())
+    # known from the html
+    assert page.height == 782
+    assert page.width == 595
+    assert len(page.text_containers) > 0
+    browser.quit()
