@@ -47,9 +47,10 @@ def test_pdf2images():
 def test_pdf2html():
     """HTML files are created on target directory"""
     file_path = Path("./tests/data/pdf-1.pdf")
-    output_path = Path("./test/output/pdf-1-html")
-    new_folder_name = f"{file_path.stem}"
+    output_path = Path("./tests/output/pdf-1-html")
     makedirs(output_path, exist_ok=True)
+
+    new_folder_name = f"{file_path.stem}"
     new_folder_path = utils.pdf2html(
         file_path.resolve(), output_path.resolve(), new_folder_name
     )

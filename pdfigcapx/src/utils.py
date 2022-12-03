@@ -104,8 +104,10 @@ def extract_page_text_content(
         if len(elem.text) > 0:
             text_lines.append(
                 TextContainer(
-                    x=elem.location["x"],
-                    y=elem.location["y"],
+                    x0=elem.location["x"],
+                    y0=elem.location["y"],
+                    x1=elem.location["x"] + elem.size["width"],
+                    y1=elem.location["y"] + elem.size["height"],
                     width=elem.size["width"],
                     height=elem.size["height"],
                     text=elem.text,
