@@ -26,3 +26,14 @@ class HtmlPage(BaseModel):
     height: int
     text_containers: Optional[list[TextContainer]] = None
     img_name: str
+
+
+class Caption(BaseModel):
+    text: str
+    x0: int
+    y0: int
+    width: int
+    height: int
+
+    def to_bbox(self):
+        return [self.x0, self.y0, self.width, self.height]
