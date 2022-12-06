@@ -108,7 +108,9 @@ def box_detection(html_file_path, info, html_boxes):
             if png_size[0] > png_size[1]:
                 png_ratio = float(png_size[0]) / info["page_height"]
             else:
-                png_ratio = float(png_size[0]) / info["page_width"]
+                png_ratio = (
+                    float(png_size[0]) / info["page_width"]
+                )  # TODO: this is probably wrong, png_size[1]
 
             # Read each page html find "Fig"
             # f = codecs.open(html_file_path + '/' + page[:-4] + '.html', 'r')
@@ -128,6 +130,7 @@ def box_detection(html_file_path, info, html_boxes):
             for e in text_elements:
                 text = e[1]
                 # if e.size['width'] > info['row_width']-100:
+                # TODO: not sure why i need these boxes again
                 page_word_box.append(
                     [
                         max(e[0][0] - info["row_height"], 0),
@@ -173,7 +176,7 @@ def box_detection(html_file_path, info, html_boxes):
 
             cap_box[page] = text_box
             table_box[page] = table_cap_box
-            word_box[page] = page_word_box
+            word_box[page] = page_word_box  # NOT BEING USED
 
             imgray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             ret, thresh = cv2.threshold(imgray, 240, 255, cv2.THRESH_BINARY_INV)

@@ -13,6 +13,8 @@ pydantic = "^1.10.2"
 selenium = "^4.7.2"
 webdriver-manager = "^3.8.5"
 ipykernel = "^6.18.3"
+matplotlib = "^3.6.2"
+opencv-python = "^4.6.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

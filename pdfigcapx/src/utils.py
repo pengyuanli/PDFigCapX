@@ -7,14 +7,14 @@ from re import split as re_split
 from subprocess import check_output
 from typing import List
 
+from models import HtmlPage, TextContainer
+
 # from numpy import empty_like, dot, array
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
-
-from .models import HtmlPage, TextContainer
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -96,6 +96,7 @@ def extract_page_text_content(
     html_file = f"file://{html_page_path}"
     browser.get(html_file)
 
+    html_path = Path(html_page_path)
     page_layout = browser.find_element(By.XPATH, "/html/body/img")
     text_elements = browser.find_elements(By.XPATH, "/html/body/div")
 
@@ -114,6 +115,8 @@ def extract_page_text_content(
                 )
             )
     page = HtmlPage(
+        name=html_path.name,
+        img_name=f"{html_path.stem}.png",
         width=page_layout.size["width"],
         height=page_layout.size["height"],
         text_containers=text_lines,

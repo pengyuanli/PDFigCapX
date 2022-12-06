@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -16,8 +16,13 @@ class TextContainer(BaseModel):
     height: int
     text: str
 
+    def to_bbox(self):
+        return [self.x0, self.y0, self.width, self.height]
+
 
 class HtmlPage(BaseModel):
+    name: str
     width: int
     height: int
     text_containers: Optional[list[TextContainer]] = None
+    img_name: str
