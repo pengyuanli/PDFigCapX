@@ -46,3 +46,7 @@ class Figure(BaseModel):
     width: int
     height: int
     caption: Caption
+    multicolumn: bool
+
+    def to_bbox(self):
+        return [self.x0, self.y0, self.width, self.height]
