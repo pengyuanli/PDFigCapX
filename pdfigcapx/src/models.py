@@ -38,3 +38,11 @@ class Caption(BaseModel):
 
     def to_bbox(self):
         return [self.x0, self.y0, self.width, self.height]
+
+
+class Figure(BaseModel):
+    x0: int
+    y0: int
+    width: int
+    height: int
+    caption: Caption
