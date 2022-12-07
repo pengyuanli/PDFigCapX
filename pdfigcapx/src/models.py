@@ -26,6 +26,7 @@ class HtmlPage(BaseModel):
     height: int
     text_containers: Optional[list[TextContainer]] = None
     img_name: str
+    page_number: int
 
 
 class Caption(BaseModel):

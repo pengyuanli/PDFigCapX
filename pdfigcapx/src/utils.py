@@ -97,6 +97,7 @@ def extract_page_text_content(
     browser.get(html_file)
 
     html_path = Path(html_page_path)
+    page_number = int(html_path.stem[4:])  # prefix is page
     page_layout = browser.find_element(By.XPATH, "/html/body/img")
     text_elements = browser.find_elements(By.XPATH, "/html/body/div")
 
@@ -120,6 +121,7 @@ def extract_page_text_content(
         width=page_layout.size["width"],
         height=page_layout.size["height"],
         text_containers=text_lines,
+        page_number=page_number,
     )
     return page
 

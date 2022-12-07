@@ -45,6 +45,7 @@ def get_pages(xpdf_path: Path):
         )
         html_pages.append(html_page)
     browser.quit()
+    html_pages = sorted(html_pages, key=lambda x: x.page_number)
     return html_pages
 
 
