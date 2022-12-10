@@ -6,18 +6,13 @@ from pathlib import Path
 from re import split as re_split
 from subprocess import check_output
 from typing import List
-
-from models import HtmlPage, TextContainer, Bbox
-
-# from numpy import empty_like, dot, array
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-
 from bs4 import BeautifulSoup
+
+from src.models import HtmlPage, TextBox
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -35,7 +30,6 @@ def pdf2images(file_path: str, output_path: str, dpi=300) -> None:
     """convert PDF to images and save them on output location"""
     gs_cmd = f"gs -q -sDEVICE=png16m \
         -o {join(output_path, 'file-%02d.png')} -r{dpi} {file_path}"
-
     # TODO: how to capture an error from the ghostscript command?
     system(gs_cmd)
 
@@ -85,105 +79,59 @@ def launch_chromedriver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     # chrome_options.add_argument("--no-sandbox")
-    # chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-
-    # caps = DesiredCapabilities().CHROME
-    # caps["pageLoadStrategy"] = "none"
     # service = Service(executable_path=ChromeDriverManager().install())
     service = Service(executable_path="/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 
-import time
-
-
 def extract_page_text_content(
     browser: webdriver.Chrome, html_page_path: str
 ) -> HtmlPage:
-    """Obtains page layout information and returns DIVs with text
-    Note: Cannot use bs4 because the chrome-browser is able to calculate
-          the dimensions of the elements in the page, which are not in the
-          raw html file.
+    """Reads an html page, calculates the page size and extracts the text boxes.
+    This method assumes that the PDF content stored in html_page_path as html
+    files was produced by xpdftools pdf2html. The input html files contain
+    a background image in the unique img tag with the page size. The text
+    content is stored in divs of class 'txt', which also provide the location
+    in the page as left and top style attributes. However, as we need to use
+    the div box size in later calculations, we use Selenium's webdriver to
+    compute the width and height. Each resulting web component also provides
+    the text content but accessing elem.text is very slow. Instead, we read
+    the html content and parse it with bs4. Using Selenium for text can be
+    2.5X slower.
+    Parameters:
+    ----------
+    - browser: webdriver.Chrome
+        chromedriver instance running headless
+    - html_page_path: str
+        folder path containing the html files
+    Returns:
+    - HtmlPage
+        Page object holding the parsed raw data
     """
+    # read with webchromedriver to get the computed sizes
     html_file = f"file://{html_page_path}"
     browser.get(html_file)
-
     html_path = Path(html_page_path)
-    page_number = int(html_path.stem[4:])  # prefix is page
-    page_layout = browser.find_element(By.ID, "background")
-    text_elements = browser.find_elements(By.CLASS_NAME, "txt")
-    # page_layout = browser.find_element(By.XPATH, "/html/body/img")
-    # text_elements = browser.find_elements(By.XPATH, "/html/body/div")
+    page_number = int(html_path.stem[4:])  # prefix is page (e.g. page1)
+    page_layout = browser.find_element(By.XPATH, "/html/body/img")
+    div_components = browser.find_elements(By.CLASS_NAME, "txt")
 
-    t = time.time()
-    text_lines = []
-    for elem in text_elements:
-        # TODO update here the model
-        bbox = Bbox(**elem.rect)
-        # x0 = elem.location["x"]
-        # y0 = elem.location["y"]
-        # width = elem.size["width"]
-        # height = elem.size["height"]
-        # text_lines.append(
-        #     TextContainer(
-        #         x0=x0,
-        #         y0=y0,
-        #         x1=x0 + width,
-        #         y1=y0 + height,
-        #         width=width,
-        #         height=height,
-        #         text=elem.text,
-        #     )
-        # )
-    print("\t", time.time() - t)
-    page = HtmlPage(
+    # read with bs4 to read the text faster than div_comps[i].text
+    with open(html_path.resolve(), "r") as f:
+        html_content = f.read()
+    soup = BeautifulSoup(html_content, "html.parser")
+    divs = soup.find_all("div", class_="txt")
+
+    text_boxes = []
+    for comp, div in zip(div_components, divs):
+        args = {**comp.rect, "page_number": page_number, "text": div.get_text()}
+        text_boxes.append(TextBox(**args))
+    return HtmlPage(
         name=html_path.name,
         img_name=f"{html_path.stem}.png",
         width=page_layout.size["width"],
         height=page_layout.size["height"],
-        text_containers=text_lines,
-        page_number=page_number,
+        text_boxes=text_boxes,
+        number=page_number,
     )
-    return page
-
-
-# def sort_by_most_common_value_desc(arr: List[int]) -> List[CountTuple]:
-#     """Count ocurrences of element in arr and return sorted tuples in desc
-#     order"""
-#     counts_per_value = [CountTuple(value=val, count=arr.count(val)) for val in set(arr)]
-#     # counts_per_value = [(val, arr.count(val)) for val in set(arr)]
-#     # return sorted(counts_per_value, key=lambda x: x.count, reverse=True)
-#     return sorted(counts_per_value, key=lambda x: (x.count, x.value), reverse=True)
-
-
-# def intersect_two_segments(
-#     point_a0: List[int],
-#     point_a1: List[int],
-#     point_q0: List[int],
-#     point_q1: List[int],
-# ) -> List[int]:
-#     """Find intersection between two segments
-#     https://stackoverflow.com/questions/3252194/numpy-and-line-intersections
-#     """
-
-#     def perp(a):
-#         b = empty_like(a)
-#         b[0] = -a[1]
-#         b[1] = a[0]
-#         return b
-
-#     def seg_intersect(a1, a2, b1, b2):
-#         da = a2 - a1
-#         db = b2 - b1
-#         dp = a1 - b1
-#         dap = perp(da)
-#         denom = dot(dap, db)
-#         num = dot(dap, dp)
-#         return (num / denom.astype(float)) * db + b1
-
-#     intersect = seg_intersect(
-#         array(point_a0), array(point_a1), array(point_q0), array(point_q1)
-#     )
-#     intersect.astype(int)
-#     return [intersect[0], intersect[1]]

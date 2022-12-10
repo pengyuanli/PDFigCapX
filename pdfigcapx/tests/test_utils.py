@@ -73,5 +73,12 @@ def test_chromedriver():
     # known from the html
     assert page.height == 782
     assert page.width == 595
-    assert len(page.text_containers) > 0
+    assert len(page.text_boxes) > 0
+    assert page.name == "page4.html"
+    assert page.img_name == "page4.png"
+    assert page.number == 4
+    # attributes not used in init
+    assert len(page.orphan_captions) == 0
+    assert len(page.figures) == 0
+    assert page.orphan_figure is None
     browser.quit()
