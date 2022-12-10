@@ -7,7 +7,7 @@ from re import split as re_split
 from subprocess import check_output
 from typing import List
 
-from models import HtmlPage, TextContainer
+from models import HtmlPage, TextContainer, Bbox
 
 # from numpy import empty_like, dot, array
 from selenium import webdriver
@@ -15,6 +15,9 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+
+from bs4 import BeautifulSoup
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -81,40 +84,59 @@ def launch_chromedriver():
     """Start chromedriver in headless mode"""
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
+    # chrome_options.add_argument("--no-sandbox")
+    # chrome_options.add_argument("--blink-settings=imagesEnabled=false")
 
+    # caps = DesiredCapabilities().CHROME
+    # caps["pageLoadStrategy"] = "none"
     # service = Service(executable_path=ChromeDriverManager().install())
     service = Service(executable_path="/usr/bin/chromedriver")
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
 
 
+import time
+
+
 def extract_page_text_content(
     browser: webdriver.Chrome, html_page_path: str
 ) -> HtmlPage:
-    """Obtains page layout information and returns DIVs with text"""
+    """Obtains page layout information and returns DIVs with text
+    Note: Cannot use bs4 because the chrome-browser is able to calculate
+          the dimensions of the elements in the page, which are not in the
+          raw html file.
+    """
     html_file = f"file://{html_page_path}"
     browser.get(html_file)
 
     html_path = Path(html_page_path)
     page_number = int(html_path.stem[4:])  # prefix is page
-    page_layout = browser.find_element(By.XPATH, "/html/body/img")
-    text_elements = browser.find_elements(By.XPATH, "/html/body/div")
+    page_layout = browser.find_element(By.ID, "background")
+    text_elements = browser.find_elements(By.CLASS_NAME, "txt")
+    # page_layout = browser.find_element(By.XPATH, "/html/body/img")
+    # text_elements = browser.find_elements(By.XPATH, "/html/body/div")
 
+    t = time.time()
     text_lines = []
     for elem in text_elements:
-        if len(elem.text) > 0:
-            text_lines.append(
-                TextContainer(
-                    x0=elem.location["x"],
-                    y0=elem.location["y"],
-                    x1=elem.location["x"] + elem.size["width"],
-                    y1=elem.location["y"] + elem.size["height"],
-                    width=elem.size["width"],
-                    height=elem.size["height"],
-                    text=elem.text,
-                )
-            )
+        # TODO update here the model
+        bbox = Bbox(**elem.rect)
+        # x0 = elem.location["x"]
+        # y0 = elem.location["y"]
+        # width = elem.size["width"]
+        # height = elem.size["height"]
+        # text_lines.append(
+        #     TextContainer(
+        #         x0=x0,
+        #         y0=y0,
+        #         x1=x0 + width,
+        #         y1=y0 + height,
+        #         width=width,
+        #         height=height,
+        #         text=elem.text,
+        #     )
+        # )
+    print("\t", time.time() - t)
     page = HtmlPage(
         name=html_path.name,
         img_name=f"{html_path.stem}.png",

@@ -15,6 +15,8 @@ webdriver-manager = "^3.8.5"
 ipykernel = "^6.18.3"
 matplotlib = "^3.6.2"
 opencv-python = "^4.6.0"
+beautifulsoup4 = "^4.11.1"
+cssutils = "^2.6.0"
 
 [tool.poetry.dev-dependencies]
 pytest = "^5.2"

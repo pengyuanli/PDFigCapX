@@ -1,13 +1,28 @@
-from typing import Any, Optional
+from typing import Any, Optional, List
 
-from pydantic import BaseModel
+# from pydantic import BaseModel
+from dataclasses import dataclass, field
 
 
-class TextContainer(BaseModel):
+@dataclass()
+class Bbox:
+    __slot__ = ("x", "y", "width", "height")
+    x: int
+    y: int
+    width: int
+    height: int
+
+    def to_bbox(self):
+        return [self.x, self.y, self.width, self.height]
+
+
+@dataclass()
+class TextContainer:
     """Represents a div with text in the document page. (x0,y0) is the top left
     corner while (x1,y1) is the bottom right corner.
     """
 
+    __slots__ = ("x0", "y0", "x1", "y1", "width", "height", "text")
     x0: int
     y0: int
     x1: int
@@ -20,7 +35,8 @@ class TextContainer(BaseModel):
         return [self.x0, self.y0, self.width, self.height]
 
 
-class Caption(BaseModel):
+@dataclass
+class Caption:
     text: str
     x0: int
     y0: int
@@ -31,22 +47,24 @@ class Caption(BaseModel):
         return [self.x0, self.y0, self.width, self.height]
 
 
-class Figure(BaseModel):
+@dataclass
+class Figure:
     x0: int
     y0: int
     width: int
     height: int
-    caption: Optional[Caption] = None
     multicolumn: bool
     identifier: Optional[str]
     type: Optional[str]
     sweep_type: Optional[str]
+    caption: Optional[Caption] = None
 
     def to_bbox(self):
         return [self.x0, self.y0, self.width, self.height]
 
 
-class HtmlPage(BaseModel):
+@dataclass
+class HtmlPage:
     """Page in a PDF document converted to HTML
     attributes:
     - name:   File name
@@ -68,9 +86,13 @@ class HtmlPage(BaseModel):
     name: str
     width: int
     height: int
-    text_containers: Optional[list[TextContainer]] = None
     img_name: str
     page_number: int
-    figures: Optional[list[Figure]] = []
-    orphan_figure: Optional[Figure] = None
-    orphan_captions: Optional[list[TextContainer]] = []
+    text_containers: List[TextContainer]
+    figures: List[Figure] = field(init=False)
+    orphan_figure: Figure = field(init=False)
+    orphan_captions: List[TextContainer] = field(init=False)
+
+    def __post_init__(self):
+        self.figures = []
+        self.orphan_captions = []
