@@ -4,15 +4,18 @@ from os import system
 from os.path import exists, join
 from pathlib import Path
 from re import split as re_split
+from re import search as re_search
+from re import IGNORECASE
 from subprocess import check_output
-from typing import List
+from typing import List, Union
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 
-from src.models import HtmlPage, TextBox
+from src.models import TextBox
+from src.page import HtmlPage
 
 
 def natural_sort(arr: List[str]) -> List[str]:
@@ -74,7 +77,7 @@ def pdf2html(file_path: str, output_base_path: str, new_folder_name: str) -> str
     return str(output_folder.resolve())
 
 
-def launch_chromedriver():
+def launch_chromedriver() -> webdriver.Chrome:
     """Start chromedriver in headless mode"""
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -135,3 +138,36 @@ def extract_page_text_content(
         text_boxes=text_boxes,
         number=page_number,
     )
+
+
+def build_regex_for_caption(type="figure") -> str:
+    """Helper to build regular expressions to find figure or table text in sentence.
+    We assume that the figure or table names are the first words in a caption.
+    """
+    if type == "figure":
+        return r"^fig*\w+ \d+"
+    elif type == "table":
+        return r"^table*\w+ \d+"
+    else:
+        raise Exception(f"Error in type {type}, we only search for a figure or table")
+
+
+def can_be_caption(text: str, type="figure") -> bool:
+    """Check whether a sentence qualifies as a potential caption
+    Parameters:
+    ----------
+    - text: str
+    - type: str, "figure" or "table"
+    returns:
+    - bool
+    """
+    reg_exp = build_regex_for_caption(type=type)
+    rgx = re_search(reg_exp, text, IGNORECASE)
+    return rgx is not None
+
+
+def get_caption_identifier(text: str, type="figure") -> Union[str, None]:
+    """Find in a text sentence a hint for the figure or table name"""
+    reg_exp = build_regex_for_caption(type=type)
+    rgx = re_search(reg_exp, text, IGNORECASE)
+    return rgx.group() if rgx is not None else None

@@ -1,4 +1,4 @@
-from typing import Any, Optional, List
+from typing import Optional, List
 from dataclasses import dataclass, field
 
 
@@ -90,36 +90,18 @@ class Figure:
 
 
 @dataclass
-class HtmlPage:
-    """Page in a PDF document converted to HTML
-    attributes:
-    - name:   File name
-    - width:  Width of HTML page which differs from the width of the PNG file
-    - height: Height of HTML page which differs from the height of the PNG file
-    - text_boxes: Every div inside the HTML containing text
-    - img_name: Associated PNG filename
-    - page_number: Page number in PDF
-    - orphan_figure: Figure in page built from remaining contour candidates
-        after every other candidates have been matched to captions. This
-        situation is common when the caption is on the next page, and the field
-        stores the caption-less figure for a posterior validation across
-        consecutive pages.
-    - orphan_captions: div containing the starting word 'figure' that were
-        not matched to any candidate region on the page after sweeping the
-        page downwards, upwards and sidewards.
-    """
-
-    name: str
+class Layout:
     width: int
     height: int
-    img_name: str
-    number: int
-    text_boxes: List[TextBox]
-    figures: List[Figure] = field(init=False)
-    orphan_figure: Figure = field(init=False)
-    orphan_captions: List[TextBox] = field(init=False)
+    num_cols: int
+    row_width: int
+    row_height: int
+    content_region: Bbox
+    col_coords: List[int]
 
-    def __post_init__(self):
-        self.figures = []
-        self.orphan_captions = []
-        self.orphan_figure = None
+
+@dataclass
+class Region:
+    bbox: Bbox
+    caption: TextBox
+    multicolumn: bool
