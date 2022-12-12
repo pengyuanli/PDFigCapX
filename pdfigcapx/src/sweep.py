@@ -1,3 +1,4 @@
+import numpy as np
 from src.models import TextBox, Layout, Region, Bbox, Figure
 from src.page import HtmlPage
 from src.utils import overlap_ratio_based
@@ -141,8 +142,12 @@ def estimate_caption_regions_side(
         else layout.col_coords[1]
     )
 
-    for caption in sorted_captions:
-        y = caption.y
+    for idx, caption in enumerate(sorted_captions):
+        if idx == len(sorted_captions) - 1:
+            # check all the way up for the last caption
+            y = layout.content_region.y
+        else:
+            y = caption.y
         h = vert_sweep - caption.y
         if caption.x < mid_point:  # caption on the left
             x = caption.x1
@@ -286,6 +291,18 @@ def expand_captions(
     return figures
 
 
+def calc_intersection_area(box1: Bbox, box2: Bbox):
+    x = max(box1.x, box2.x)
+    y = max(box1.y, box2.y)
+    w = min(box1.x + box1.width, box2.x + box2.width) - x
+    h = min(box1.y + box1.height, box2.y + box2.height) - y
+
+    if w < 0 or h < 0:
+        return 0.0
+    else:
+        return w * h
+
+
 def get_figures(
     page: HtmlPage,
     candidates: List[Bbox],
@@ -293,6 +310,25 @@ def get_figures(
     layout: Layout,
     sweep_type: str,
 ) -> Tuple[List[Figure], List[TextBox], List[Bbox]]:
+
+    # if len(captions) == 1:
+    #     # check what sweeping gets most coverage
+    #     # TODO update to match logic with sparse_figures
+    #     regions_top = estimate_caption_regions_top(captions, layout)
+    #     regions_bottom = estimate_caption_regions_bottom(captions, layout)
+    #     regions_side = estimate_caption_regions_side(captions, layout)
+    #     regions = [regions_top[0], regions_bottom[0], regions_side[0]]
+    #     overlaps = np.array([0, 0, 0])
+    #     bbox = merge_candidate_bboxes(candidates)
+    #     for idx, region in enumerate(regions):
+    #         overlaps[idx] = calc_intersection_area(region.bbox, bbox)
+    #     max_region_idx = overlaps.argmax()
+    #     figures = [
+    #         Figure(bbox, True, regions[max_region_idx].caption, "unique_bigger_area")
+    #     ]
+    #     figures = expand_captions(page, figures, layout.row_height)
+    #     return figures, [], []
+
     if sweep_type == "captions_below_figures":
         regions = estimate_caption_regions_top(captions, layout)
     elif sweep_type == "captions_over_figures":

@@ -4,6 +4,7 @@ from os import listdir, makedirs
 from pathlib import Path
 from shutil import rmtree
 
+import traceback
 import PIL
 import math
 import utils
@@ -55,6 +56,7 @@ def get_pages(xpdf_path: Path) -> List[HtmlPage]:
             html_pages.append(html_page)
     except Exception as e:
         print(e)
+        traceback.print_exc()
         return None
     finally:
         if browser:
@@ -147,7 +149,9 @@ def calc_document_layout(pages: List[HtmlPage], threshold=30) -> Layout:
     content_region = find_content_region(pages, page_width, threshold)
 
     # number of columns
-    number_cols = math.floor(page_width / row_width)
+    # using page_width / row_width can fail when the publication has a lot of
+    # padding outside of the content region and withing columns
+    number_cols = math.floor(content_region.width / row_width)
     if number_cols == 1:
         col_coords = [content_region.x]
     else:
@@ -187,21 +191,27 @@ def extract(pdf_path: str, base_folder: str, size_threshold=1000):
             xpdf_folder_path, page, layout, fig_captions
         )
         sweep_regions(page, candidates, fig_captions, table_captions, layout)
-        match_orphans(pages, layout)
-        # TODO: if orphan inside other image, then delete
-        page.figures = [
-            f for f in page.figures if f.bbox.width * f.bbox.height > size_threshold
-        ]
+    match_orphans(pages, layout)
+    # TODO: if orphan inside other image, then delete
+    page.figures = [
+        f for f in page.figures if f.bbox.width * f.bbox.height > size_threshold
+    ]
     return pages, layout, xpdf_folder_path
 
 
 def save(
-    pdf_path: str, pages: List[HtmlPage], base_folder: str, layout: Layout, dpi=300
+    pdf_path: str,
+    pages: List[HtmlPage],
+    base_folder: str,
+    layout: Layout,
+    dpi=300,
+    prefix=None,
 ):
     output_path = Path(base_folder)
     full_pdf_path = Path(pdf_path)
     pil_images = fetch_pages_as_images(full_pdf_path, output_path, dpi)
 
+    str_prefix = "" if not prefix else f"{prefix}_"
     for page, pil_image in zip(pages, pil_images):
         scale = float(pil_image.size[0]) / layout.width
 
@@ -213,7 +223,7 @@ def save(
                 fig.bbox.y1 * scale,
             ]
             extracted_fig = pil_image.crop(crop_box)
-            fig_name = f"{page.number}_{idx+1}.jpg"
+            fig_name = f"{str_prefix}{page.number}_{idx+1}.jpg"
             fig_path = output_path / fig_name
             extracted_fig.save(fig_path)
 
@@ -221,13 +231,14 @@ def save(
 def process_pdf(pdf_path: str, output_img_path: str):
     full_pdf_path = Path(pdf_path)
     target_folder_name = full_pdf_path.stem
-    target_img_folder = Path(output_img_path) / target_folder_name
+    # target_img_folder = Path(output_img_path) / target_folder_name
+    target_img_folder = Path(output_img_path) / "samples"
     makedirs(target_img_folder, exist_ok=True)
 
     pages, layout, xpdf_folder_path = extract(
         full_pdf_path.resolve(), target_img_folder.resolve()
     )
-    save(pdf_path, pages, target_img_folder, layout)
+    save(pdf_path, pages, target_img_folder, layout, prefix=target_folder_name)
 
 
 if __name__ == "__main__":

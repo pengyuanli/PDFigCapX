@@ -119,15 +119,22 @@ def extract_page_text_content(
     div_components = browser.find_elements(By.CLASS_NAME, "txt")
 
     # read with bs4 to read the text faster than div_comps[i].text
-    with open(html_path.resolve(), "r") as f:
-        html_content = f.read()
-    soup = BeautifulSoup(html_content, "html.parser")
-    divs = soup.find_all("div", class_="txt")
-
-    text_boxes = []
-    for comp, div in zip(div_components, divs):
-        args = {**comp.rect, "page_number": page_number, "text": div.get_text()}
-        text_boxes.append(TextBox(**args))
+    try:
+        with open(html_path.resolve(), "r") as f:
+            html_content = f.read()
+        soup = BeautifulSoup(html_content, "html.parser")
+        divs = soup.find_all("div", class_="txt")
+        text_boxes = []
+        for comp, div in zip(div_components, divs):
+            args = {**comp.rect, "page_number": page_number, "text": div.get_text()}
+            text_boxes.append(TextBox(**args))
+    except UnicodeDecodeError:
+        # some html files may have conflicting characters with utf-8, in those
+        # cases try to read with the text from the web components
+        text_boxes = []
+        for comp in div_components:
+            args = {**comp.rect, "page_number": page_number, "text": comp.text}
+            text_boxes.append(TextBox(**args))
     return HtmlPage(
         name=html_path.name,
         img_name=f"{html_path.stem}.png",

@@ -48,7 +48,7 @@ def build_regex_for_caption(type="figure") -> str:
     We assume that the figure or table names are the first words in a caption.
     """
     if type == "figure":
-        return r"^fig*\w+ \d+"
+        return r"^fig*\w+ \d+\."
     elif type == "table":
         return r"^table*\w+ \d+"
     else:
