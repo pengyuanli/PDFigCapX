@@ -1,5 +1,7 @@
-from typing import Optional, List
+from typing import Optional, List, Union
 from dataclasses import dataclass, field
+from re import search as re_search
+from re import IGNORECASE
 
 
 @dataclass()
@@ -32,6 +34,26 @@ class Bbox:
         """Convert bounding box to array [x,y,w,h]"""
         return [self.x, self.y, self.width, self.height]
 
+    def __eq__(self, other):
+        return (
+            self.x == other.x
+            and self.y == other.y
+            and self.width == other.width
+            and self.height == other.height
+        )
+
+
+def build_regex_for_caption(type="figure") -> str:
+    """Helper to build regular expressions to find figure or table text in sentence.
+    We assume that the figure or table names are the first words in a caption.
+    """
+    if type == "figure":
+        return r"^fig*\w+ \d+"
+    elif type == "table":
+        return r"^table*\w+ \d+"
+    else:
+        raise Exception(f"Error in type {type}, we only search for a figure or table")
+
 
 @dataclass()
 class TextBox(Bbox):
@@ -49,6 +71,25 @@ class TextBox(Bbox):
     __slots__ = ("page_number", "text")
     page_number: int
     text: str
+
+    def can_be_caption(self, type="figure") -> bool:
+        """Check whether a sentence qualifies as a potential caption
+        Parameters:
+        ----------
+        - text: str
+        - type: str, "figure" or "table"
+        returns:
+        - bool
+        """
+        reg_exp = build_regex_for_caption(type=type)
+        rgx = re_search(reg_exp, self.text, IGNORECASE)
+        return rgx is not None
+
+    def get_caption_identifier(self, type="figure") -> Union[str, None]:
+        """Find in a text sentence a hint for the figure or table name"""
+        reg_exp = build_regex_for_caption(type=type)
+        rgx = re_search(reg_exp, self.text, IGNORECASE)
+        return rgx.group() if rgx is not None else None
 
 
 # TODO: delete and replace by TextBox
@@ -83,10 +124,15 @@ class Figure:
 
     bbox: Bbox
     multicolumn: bool
-    identifier: Optional[str]
-    type: Optional[str]
-    sweep_type: Optional[str]
-    caption: Optional[TextBox] = None
+    caption: TextBox
+    sweep_type: str
+    identifier: str = field(init=False)
+    type: str = field(init=False)
+
+    def __post_init__(self):
+        # TODO: update
+        self.type = "temp"
+        self.identifier = ""
 
 
 @dataclass

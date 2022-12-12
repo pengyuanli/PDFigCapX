@@ -9,7 +9,11 @@ import math
 import utils
 from PIL import Image
 from typing import List, Union
-from src.models import HtmlPage, Layout, Bbox, TextBox
+from src.models import Layout, Bbox, TextBox
+from src.page import HtmlPage
+
+from src.contours import get_potential_contours
+from src.sweep import sweep_regions, match_orphans
 
 
 def fetch_pages_as_images(
@@ -54,7 +58,7 @@ def get_pages(xpdf_path: Path) -> List[HtmlPage]:
     finally:
         if browser:
             browser.quit()
-    html_pages = sorted(html_pages, key=lambda x: x.page_number)
+    html_pages = sorted(html_pages, key=lambda x: x.number)
     return html_pages
 
 
@@ -82,17 +86,21 @@ def merge_left_padded_points(
 def calc_row_size(pages: List[HtmlPage], threshold=30):
     widths = [y.width for x in pages for y in x.text_boxes if y.width > threshold]
     heights = [y.height for x in pages for y in x.text_boxes if y.width > threshold]
-    sorted_widths = sorted([i for i in set(widths)], key=lambda x: x[1], reverse=True)
-    sorted_heights = sorted([i for i in set(heights)], key=lambda x: x[1], reverse=True)
-    width = sorted_widths[0]
-    height = sorted_heights[0]
+    sorted_widths = sorted(
+        [(i, widths.count(i)) for i in set(widths)], key=lambda x: x[1], reverse=True
+    )
+    sorted_heights = sorted(
+        [(i, heights.count(i)) for i in set(heights)], key=lambda x: x[1], reverse=True
+    )
+    width = sorted_widths[0][0]
+    height = sorted_heights[0][0]
 
     return width, height
 
 
 def find_content_region(pages: List[HtmlPage], threshold=30):
-    x0s = [y.x0 for x in pages for y in x.text_boxes if y.width > threshold]
-    y0s = [y.y0 for x in pages for y in x.text_boxes if y.width > threshold]
+    x0s = [y.x for x in pages for y in x.text_boxes if y.width > threshold]
+    y0s = [y.y for x in pages for y in x.text_boxes if y.width > threshold]
     x1s = [y.x1 for x in pages for y in x.text_boxes if y.width > threshold]
     sorted_x0s = sorted(
         [(i, x0s.count(i)) for i in set(x0s)], key=lambda x: x[1], reverse=True
@@ -107,7 +115,7 @@ def find_content_region(pages: List[HtmlPage], threshold=30):
         y.y1
         for x in pages
         for y in x.text_boxes
-        if y.x0 >= cr_x0 and y.x1 <= cr_x1 and y.y0 >= cr_y0
+        if y.x >= cr_x0 and y.x1 <= cr_x1 and y.y >= cr_y0
     ]
     cr_y1 = max(cand_y1s)
     cr = {"x": cr_x0, "y": cr_y0, "width": cr_x1 - cr_x0, "height": cr_y1 - cr_y0}
@@ -132,36 +140,70 @@ def calc_document_layout(pages: List[HtmlPage], threshold=30) -> Layout:
     page_width = pages[0].width  # TODO: change to mode width?
     number_cols = math.floor(page_width / row_width)
     if number_cols == 1:
-        col_coords = [content_region.x0]
+        col_coords = [content_region.x]
     else:
         candidates = [
-            y.x0
+            y.x
             for x in pages
             for y in x.text_boxes
-            if y.x0 >= content_region.x0 + row_width
+            if y.x >= content_region.x + row_width
         ]
-        col_coords = [content_region.x0, min(candidates)]
+        col_coords = [content_region.x, min(candidates)]
 
     return Layout(
         width=page_width,
         height=pages[0].height,
         row_width=row_width,
         row_height=row_height,
-        content_region=Bbox(**content_region),
+        content_region=content_region,
         num_cols=number_cols,
         col_coords=col_coords,
     )
 
 
-def extract_figures(pdf_path: Path, xpdf_path: Path):
-    """the figures_caption_list method"""
-    html_pages = get_pages(xpdf_path)
+def extract(pdf_path: str, base_folder: str, size_threshold=1000):
+    full_pdf_path = Path(pdf_path)
+    full_base_path = Path(base_folder)
 
-
-def process_pdf(pdf_path: Path, base_folder: Path, dpi=300):
-    """a, for exception delete all inside folder"""
-    pil_images = fetch_pages_as_images(pdf_path, base_folder, dpi)
-    xpdf_folder_name = f"xpdf_{pdf_path.stem}"
+    xpdf_folder_name = f"xpdf_{full_pdf_path.stem}"
     xpdf_folder_path = utils.pdf2html(
-        pdf_path.resolve(), base_folder.resolve(), xpdf_folder_name
+        full_pdf_path.resolve(), full_base_path.resolve(), xpdf_folder_name
     )
+    pages = get_pages(Path(xpdf_folder_path))
+    layout = calc_document_layout(pages)
+
+    for page in pages:
+        fig_captions, table_captions = page.find_caption_boxes()
+        candidates, _ = get_potential_contours(
+            xpdf_folder_path, page, layout, fig_captions
+        )
+        sweep_regions(page, candidates, fig_captions, table_captions, layout)
+        match_orphans(pages, layout)
+        # TODO: if orphan inside other image, then delete
+        page.figures = [
+            f for f in page.figures if f.bbox.width * f.bbox.height > size_threshold
+        ]
+    return pages, layout, xpdf_folder_path
+
+
+def save(
+    pdf_path: str, pages: List[HtmlPage], base_folder: str, layout: Layout, dpi=300
+):
+    output_path = Path(base_folder)
+    full_pdf_path = Path(pdf_path)
+    pil_images = fetch_pages_as_images(full_pdf_path, output_path, dpi)
+
+    for page, pil_image in zip(pages, pil_images):
+        scale = float(pil_image.size[0]) / layout.width
+
+        for idx, fig in enumerate(page.figures):
+            crop_box = [
+                fig.bbox.x * scale,
+                fig.bbox.y * scale,
+                fig.bbox.x1 * scale,
+                fig.bbox.y1 * scale,
+            ]
+            extracted_fig = pil_image.crop(crop_box)
+            fig_name = f"{page.number}_{idx+1}.jpg"
+            fig_path = output_path / fig_name
+            extracted_fig.save(fig_path)

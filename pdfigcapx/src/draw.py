@@ -8,8 +8,8 @@ from src.page import HtmlPage
 def draw_content_region(ax: List[List[Axes]], region: Bbox):
     rect = patches.Rectangle(
         (region.x, region.y),
-        region.w,
-        region.h,
+        region.width,
+        region.height,
         linewidth=1,
         edgecolor="black",
         facecolor="none",
@@ -47,8 +47,8 @@ def draw_bboxes(
     for box in boxes:
         rect = patches.Rectangle(
             (box.x, box.y),
-            box.w,
-            box.h,
+            box.width,
+            box.height,
             linewidth=1,
             edgecolor=edgecolor,
             facecolor=facecolor if facecolor else "null",

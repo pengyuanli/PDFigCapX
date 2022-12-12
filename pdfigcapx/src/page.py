@@ -1,6 +1,5 @@
 from typing import List, Tuple
 from src.models import TextBox
-from src.utils import can_be_caption
 
 
 class HtmlPage:
@@ -46,9 +45,8 @@ class HtmlPage:
         table_captions = []
         figure_captions = []
         for text_box in self.text_boxes:
-            text = text_box.text.strip()
-            if can_be_caption(text, type="figure"):
+            if text_box.can_be_caption(type="figure"):
                 figure_captions.append(text_box)
-            elif can_be_caption(text, type="table"):
+            elif text_box.can_be_caption(type="table"):
                 table_captions.append(text_box)
         return figure_captions, table_captions

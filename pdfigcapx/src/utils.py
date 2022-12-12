@@ -4,8 +4,6 @@ from os import system
 from os.path import exists, join
 from pathlib import Path
 from re import split as re_split
-from re import search as re_search
-from re import IGNORECASE
 from subprocess import check_output
 from typing import List, Union
 from selenium import webdriver
@@ -14,7 +12,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from bs4 import BeautifulSoup
 
-from src.models import TextBox
+from src.models import TextBox, Bbox
 from src.page import HtmlPage
 
 
@@ -140,34 +138,14 @@ def extract_page_text_content(
     )
 
 
-def build_regex_for_caption(type="figure") -> str:
-    """Helper to build regular expressions to find figure or table text in sentence.
-    We assume that the figure or table names are the first words in a caption.
-    """
-    if type == "figure":
-        return r"^fig*\w+ \d+"
-    elif type == "table":
-        return r"^table*\w+ \d+"
+def overlap_ratio_based(box1: Bbox, box2: Bbox) -> float:
+    # overlap ratio based on box1
+    SI = max(0, min(box1.x1, box2.x1) - max(box1.x, box2.x)) * max(
+        0, min(box1.y1, box2.y1) - max(box1.y, box2.y)
+    )
+    box1_area = box1.width * box1.height
+    if box1_area == 0:
+        overlap_ratio = 0
     else:
-        raise Exception(f"Error in type {type}, we only search for a figure or table")
-
-
-def can_be_caption(text: str, type="figure") -> bool:
-    """Check whether a sentence qualifies as a potential caption
-    Parameters:
-    ----------
-    - text: str
-    - type: str, "figure" or "table"
-    returns:
-    - bool
-    """
-    reg_exp = build_regex_for_caption(type=type)
-    rgx = re_search(reg_exp, text, IGNORECASE)
-    return rgx is not None
-
-
-def get_caption_identifier(text: str, type="figure") -> Union[str, None]:
-    """Find in a text sentence a hint for the figure or table name"""
-    reg_exp = build_regex_for_caption(type=type)
-    rgx = re_search(reg_exp, text, IGNORECASE)
-    return rgx.group() if rgx is not None else None
+        overlap_ratio = float(SI) / box1_area
+    return overlap_ratio
