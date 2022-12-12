@@ -7,6 +7,7 @@ from shutil import rmtree
 import PIL
 import math
 import utils
+import argparse
 from PIL import Image
 from typing import List, Union
 from src.models import Layout, Bbox, TextBox
@@ -98,8 +99,16 @@ def calc_row_size(pages: List[HtmlPage], threshold=30):
     return width, height
 
 
-def find_content_region(pages: List[HtmlPage], threshold=30):
-    x0s = [y.x for x in pages for y in x.text_boxes if y.width > threshold]
+def find_content_region(pages: List[HtmlPage], page_width: int, threshold=30):
+    """
+    There may be a case when there are more rows on the right side, so use page_width to filter
+    """
+    x0s = [
+        y.x
+        for x in pages
+        for y in x.text_boxes
+        if y.width > threshold and y.x < page_width / 2
+    ]
     y0s = [y.y for x in pages for y in x.text_boxes if y.width > threshold]
     x1s = [y.x1 for x in pages for y in x.text_boxes if y.width > threshold]
     sorted_x0s = sorted(
@@ -134,10 +143,10 @@ def calc_document_layout(pages: List[HtmlPage], threshold=30) -> Layout:
     # use more common widths and heights to estimate row properties
     row_width, row_height = calc_row_size(pages, threshold)
     # use most common coordinates to find the publication text region
-    content_region = find_content_region(pages, threshold)
+    page_width = pages[0].width  # TODO: change to mode width?
+    content_region = find_content_region(pages, page_width, threshold)
 
     # number of columns
-    page_width = pages[0].width  # TODO: change to mode width?
     number_cols = math.floor(page_width / row_width)
     if number_cols == 1:
         col_coords = [content_region.x]
@@ -207,3 +216,31 @@ def save(
             fig_name = f"{page.number}_{idx+1}.jpg"
             fig_path = output_path / fig_name
             extracted_fig.save(fig_path)
+
+
+def process_pdf(pdf_path: str, output_img_path: str):
+    full_pdf_path = Path(pdf_path)
+    target_folder_name = full_pdf_path.stem
+    target_img_folder = Path(output_img_path) / target_folder_name
+    makedirs(target_img_folder, exist_ok=True)
+
+    pages, layout, xpdf_folder_path = extract(
+        full_pdf_path.resolve(), target_img_folder.resolve()
+    )
+    save(pdf_path, pages, target_img_folder, layout)
+
+
+if __name__ == "__main__":
+    # parser = argparse.ArgumentParser(
+    #     prog="pdffigcapx",
+    #     description="extract document figures",
+    # )
+    # parser.add_argument("filename")
+    # parser.add_argument("out_data_path")
+    # args = parser.parse_args()
+    base_folder = Path("/home/jtt/pdfs/sample_wormbase")
+    pdfs = [base_folder / x for x in listdir(base_folder)]
+
+    for d in pdfs:
+        print(d.stem)
+        process_pdf(d, "./tests/output")
