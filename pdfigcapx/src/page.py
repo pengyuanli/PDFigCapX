@@ -1,5 +1,6 @@
 from typing import List, Tuple
-from src.models import TextBox
+from src.models import TextBox, Layout
+from copy import deepcopy
 
 
 class HtmlPage:
@@ -50,3 +51,44 @@ class HtmlPage:
             elif text_box.can_be_caption(type="table"):
                 table_captions.append(text_box)
         return figure_captions, table_captions
+
+    def expand_caption(self, caption: TextBox, layout: Layout) -> TextBox:
+        if caption.x < layout.width / 2 and caption.x1 > layout.width / 2:
+            alignment = "multicolumn"
+            sentences = [
+                box
+                for box in self.text_boxes
+                if box.y > caption.y and abs(caption.x - box.x) < layout.row_width / 2
+            ]
+        elif caption.x1 < layout.width / 2:
+            alignment = "left"
+            sentences = [
+                box
+                for box in self.text_boxes
+                if box.y > caption.y and abs(caption.x - box.x) < layout.row_width / 2
+            ]
+        else:
+            alignment = "right"
+            sentences = [
+                box
+                for box in self.text_boxes
+                if box.y > caption.y and abs(caption.x1 - box.x1) < layout.row_width / 2
+            ]
+
+        # the filtering is dropping the last sentence by mistake because the length
+        # is smaller than row_width / 2
+        sentences = sorted(sentences, key=lambda el: el.y)
+        sweep_y = caption.y1
+
+        new_caption = deepcopy(caption)
+        for sentence in sentences:
+            if abs(sentence.y - sweep_y) < layout.row_height * 1.5:
+                # could modify width but it would be not convenient for captions
+                # surrounding images
+                new_caption.y1 = sentence.y1
+                new_caption.height = new_caption.y1 - new_caption.y
+                new_caption.text += f" {sentence.text}"
+                sweep_y = sentence.y
+            else:
+                break
+        return new_caption

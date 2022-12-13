@@ -92,19 +92,6 @@ class TextBox(Bbox):
         return rgx.group() if rgx is not None else None
 
 
-# TODO: delete and replace by TextBox
-@dataclass
-class Caption:
-    text: str
-    x0: int
-    y0: int
-    width: int
-    height: int
-
-    def to_bbox(self):
-        return [self.x0, self.y0, self.width, self.height]
-
-
 @dataclass
 class Figure:
     """Extracted figure from a document page.

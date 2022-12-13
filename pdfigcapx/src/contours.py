@@ -13,8 +13,10 @@ from cv2 import (
     CHAIN_APPROX_SIMPLE,
     RETR_TREE,
     FILLED,
+    RETR_EXTERNAL,
     Mat,
 )
+import cv2
 from numpy import ones, uint8, zeros, array
 from PIL import Image
 from copy import copy
@@ -61,7 +63,11 @@ def get_potential_contours(
     _, thresh = threshold(page_image_gray, 240, 255, THRESH_BINARY_INV)
     kernel = ones((5, 5), uint8)
     dilation = dilate(thresh, kernel, iterations=1)
-    contours, _ = findContours(dilation, RETR_TREE, CHAIN_APPROX_SIMPLE)
+    contours, _ = findContours(dilation, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)
+
+    # for cnt in contours:
+    #     drawContours(canvas, [cnt], 0, 255, -1)
+    # contours, _ = findContours(canvas, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE)
 
     # merge contours based on multicolumn
     cnts = [scaled_bbox(el, scaling) for el in contours]
@@ -105,7 +111,7 @@ def get_potential_contours(
 
         if (
             overlap_w_captions < 0.5
-            # and overlap_w_layout < 0.2
+            and overlap_w_layout < 0.2
             and cnt.y >= layout.content_region.y - LAYOUT_MARGIN
             and cnt.height > layout.row_height
         ):

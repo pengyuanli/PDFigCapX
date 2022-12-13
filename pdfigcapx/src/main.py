@@ -121,7 +121,9 @@ def find_content_region(pages: List[HtmlPage], page_width: int, threshold=30):
     # content region
     cr_x0 = sorted_x0s[0][0]
     cr_y0 = max(0, min(y0s))
-    cr_x1 = max(x1s)
+    # The converted html file may have some overflowing divs due to conversion
+    # errors. In case of overflow, assume a similar padding like the left side
+    cr_x1 = min(page_width - cr_x0, max(x1s))
     cand_y1s = [  # y1s constrained to other three coordinates
         y.y1
         for x in pages
@@ -155,13 +157,16 @@ def calc_document_layout(pages: List[HtmlPage], threshold=30) -> Layout:
     if number_cols == 1:
         col_coords = [content_region.x]
     else:
-        candidates = [
+        x1s = [
             y.x
             for x in pages
             for y in x.text_boxes
             if y.x >= content_region.x + row_width
         ]
-        col_coords = [content_region.x, min(candidates)]
+        x1s = sorted(
+            [(i, x1s.count(i)) for i in set(x1s)], key=lambda x: x[1], reverse=True
+        )
+        col_coords = [content_region.x, x1s[0][0]]
 
     return Layout(
         width=page_width,
@@ -187,10 +192,14 @@ def extract(pdf_path: str, base_folder: str, size_threshold=1000):
 
     for page in pages:
         fig_captions, table_captions = page.find_caption_boxes()
+        fig_captions = [
+            page.expand_caption(caption, layout) for caption in fig_captions
+        ]
         candidates, _ = get_potential_contours(
             xpdf_folder_path, page, layout, fig_captions
         )
-        sweep_regions(page, candidates, fig_captions, table_captions, layout)
+        if len(fig_captions) > 0 and len(candidates) > 0:
+            sweep_regions(page, candidates, fig_captions, table_captions, layout)
     match_orphans(pages, layout)
     # TODO: if orphan inside other image, then delete
     page.figures = [
@@ -228,7 +237,7 @@ def save(
             extracted_fig.save(fig_path)
 
 
-def process_pdf(pdf_path: str, output_img_path: str):
+def process_pdf(pdf_path: str, output_img_path: str, add_prefix=False):
     full_pdf_path = Path(pdf_path)
     target_folder_name = full_pdf_path.stem
     # target_img_folder = Path(output_img_path) / target_folder_name
@@ -238,7 +247,9 @@ def process_pdf(pdf_path: str, output_img_path: str):
     pages, layout, xpdf_folder_path = extract(
         full_pdf_path.resolve(), target_img_folder.resolve()
     )
-    save(pdf_path, pages, target_img_folder, layout, prefix=target_folder_name)
+
+    prefix = target_folder_name if add_prefix else None
+    save(pdf_path, pages, target_img_folder, layout, prefix=prefix)
 
 
 if __name__ == "__main__":
@@ -249,9 +260,10 @@ if __name__ == "__main__":
     # parser.add_argument("filename")
     # parser.add_argument("out_data_path")
     # args = parser.parse_args()
-    base_folder = Path("/home/jtt/pdfs/sample_wormbase")
+    base_folder = Path("/home/jtt/Documents/test_pdfigcapx")
     pdfs = [base_folder / x for x in listdir(base_folder)]
 
-    for d in pdfs:
-        print(d.stem)
-        process_pdf(d, "./tests/output")
+    # for d in pdfs:
+    d = Path("/home/jtt/Documents/test_pdfigcapx/pmid18430929.pdf")
+    print(d.stem)
+    process_pdf(d, "/home/jtt/Documents/outputs/tests/", add_prefix=True)

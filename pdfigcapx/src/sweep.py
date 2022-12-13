@@ -14,7 +14,9 @@ def is_multicol_caption(box: TextBox, layout: Layout):
     ROW_EXTRA = layout.row_width / 5
     x0_2nd_col = layout.col_coords[1]
 
-    if (box.x < x0_2nd_col and box.x1 > x0_2nd_col) or box.x > x0_2nd_col + ROW_EXTRA:
+    if (
+        box.x < x0_2nd_col and box.x1 > x0_2nd_col
+    ):  # or box.x > x0_2nd_col:  + ROW_EXTRA:
         return True
     return False
 
@@ -60,7 +62,7 @@ def estimate_caption_regions_top(
                     sweep[0] = caption.y1
                 else:
                     y = sweep[1]
-                    w = layout.width - layout.col_coords[0]
+                    w = layout.content_region.x1 - caption.x
                     h = caption.y - sweep[1]
                     sweep[1] = caption.y1
             bbox = Bbox(x, y, w, h)
@@ -92,7 +94,7 @@ def estimate_caption_regions_bottom(
             regions.append(Region(bbox, caption, False))
             vert_sweep = caption.y
     elif layout.num_cols == 2:
-        sweep = [layout.content_region.height] * layout.num_cols
+        sweep = [layout.content_region.y1] * layout.num_cols
         sorted_captions = sorted(captions, key=lambda x: (x.y, x.x), reverse=True)
         for caption in sorted_captions:
             is_multicol = is_multicol_caption(caption, layout)
@@ -108,11 +110,11 @@ def estimate_caption_regions_bottom(
                 y = caption.y1
                 if caption.x < layout.col_coords[1]:
                     w = layout.col_coords[1] - layout.col_coords[0]
-                    h = sweep[0] - caption.y
+                    h = sweep[0] - caption.y1
                     sweep[0] = caption.y
                 else:
-                    w = layout.width - layout.col_coords[0]
-                    h = sweep[1] - caption.y
+                    w = layout.content_region.x1 - caption.x
+                    h = sweep[1] - caption.y1
                     sweep[1] = caption.y
             bbox = Bbox(x, y, w, h)
             regions.append(Region(bbox, caption, is_multicol))
@@ -123,7 +125,7 @@ def estimate_caption_regions_bottom(
 
 
 def estimate_caption_regions_side(
-    captions: list[TextBox], layout: Layout
+    captions: list[TextBox], layout: Layout, greedy=False
 ) -> List[Region]:
     """Estimate the regions when the caption is to the right or left of the
     figure. These cases contemplate only multi-column figures because
@@ -147,8 +149,11 @@ def estimate_caption_regions_side(
             # check all the way up for the last caption
             y = layout.content_region.y
         else:
-            y = caption.y
-        h = vert_sweep - caption.y
+            if greedy:
+                y = layout.y
+            else:
+                y = caption.y
+        h = vert_sweep - y
         if caption.x < mid_point:  # caption on the left
             x = caption.x1
             w = layout.content_region.width - caption.width
@@ -303,6 +308,56 @@ def calc_intersection_area(box1: Bbox, box2: Bbox):
         return w * h
 
 
+def greedy_swap(caption, candidates, layout):
+    regions_top = estimate_caption_regions_top([caption], layout)
+    regions_bottom = estimate_caption_regions_bottom([caption], layout)
+    regions_side = estimate_caption_regions_side([caption], layout, greedy=True)
+    overlaps = np.array([0, 0, 0])
+    regions = [regions_top[0], regions_bottom[0], regions_side[0]]
+
+    bbox = None
+    for idx, region in enumerate(regions):
+        filtered_candidates = [
+            c for c in candidates if overlap_ratio_based(c, region.bbox) > 0.1
+        ]
+        if len(filtered_candidates) > 0:
+            bbox = merge_candidate_bboxes(filtered_candidates)
+            overlaps[idx] = calc_intersection_area(region.bbox, bbox)
+        else:
+            overlaps[idx] = 0
+    max_region_idx = overlaps.argmax()
+
+    if bbox:
+        caption = regions[max_region_idx].caption
+
+        figure = Figure(
+            bbox,
+            region.multicolumn,
+            caption,
+            f"unique_{max_region_idx}",
+        )
+        figure.identifier = regions[max_region_idx].caption.get_caption_identifier()
+
+        if not is_multicol_caption(caption, layout) and max_region_idx != 2:
+            if caption.x1 <= layout.col_coords[1]:
+                figure.bbox.x = layout.col_coords[0] - layout.col_coords[0] / 4
+                figure.bbox.x1 = layout.col_coords[1]
+                figure.bbox.width = figure.bbox.x1 - figure.bbox.x
+            else:
+                figure.bbox.x = layout.col_coords[1]
+                figure.bbox.x1 = layout.content_region.x1 + layout.col_coords[0] / 4
+                figure.bbox.width = figure.bbox.x1 - figure.bbox.x
+        else:
+            if region.multicolumn and max_region_idx != 2:
+                # check versus the expanded caption
+                figure.bbox.x = layout.content_region.x
+                figure.bbox.x1 = layout.width
+                figure.bbox.width = figure.bbox.x1 - bbox.x
+        return figure
+    else:
+        return None
+
+
 def get_figures(
     page: HtmlPage,
     candidates: List[Bbox],
@@ -311,23 +366,13 @@ def get_figures(
     sweep_type: str,
 ) -> Tuple[List[Figure], List[TextBox], List[Bbox]]:
 
-    # if len(captions) == 1:
-    #     # check what sweeping gets most coverage
-    #     # TODO update to match logic with sparse_figures
-    #     regions_top = estimate_caption_regions_top(captions, layout)
-    #     regions_bottom = estimate_caption_regions_bottom(captions, layout)
-    #     regions_side = estimate_caption_regions_side(captions, layout)
-    #     regions = [regions_top[0], regions_bottom[0], regions_side[0]]
-    #     overlaps = np.array([0, 0, 0])
-    #     bbox = merge_candidate_bboxes(candidates)
-    #     for idx, region in enumerate(regions):
-    #         overlaps[idx] = calc_intersection_area(region.bbox, bbox)
-    #     max_region_idx = overlaps.argmax()
-    #     figures = [
-    #         Figure(bbox, True, regions[max_region_idx].caption, "unique_bigger_area")
-    #     ]
-    #     figures = expand_captions(page, figures, layout.row_height)
-    #     return figures, [], []
+    print(f"pg.{page.number}", len(captions), len(candidates))
+    if len(captions) == 1 and len(candidates) > 0:
+        figure = greedy_swap(captions[0], candidates, layout)
+        if figure:
+            return [figure], [], []
+        else:
+            return [], captions, candidates
 
     if sweep_type == "captions_below_figures":
         regions = estimate_caption_regions_top(captions, layout)
@@ -340,7 +385,7 @@ def get_figures(
     figures, remaining_captions, remaning_candidates = match_figures_with_captions(
         regions, candidates, sweep_type, layout
     )
-    figures = expand_captions(page, figures, layout.row_height)
+    # figures = expand_captions(page, figures, layout.row_height)
     return figures, remaining_captions, remaning_candidates
 
 
@@ -353,33 +398,29 @@ def sweep_regions(
 ):
     sweep_strategy = [
         ("captions_below_figures", "figures"),
-        ("captions_over_figures", "tables"),
         ("captions_over_figures", "figures"),
-        ("captions_next_to_figures", "tables"),
+        ("captions_next_to_figures", "figures"),
     ]
 
-    for strategy, target in sweep_strategy:
-        captions = fig_captions if target == "figures" else table_captions
-        figures, remaining_captions, candidates = get_figures(
-            page, candidates, captions, layout, strategy
+    remaining_candidates = deepcopy(candidates)
+    remaining_captions = deepcopy(fig_captions)
+    for strategy, _ in sweep_strategy:
+        figures, remaining_captions, remaining_candidates = get_figures(
+            page, remaining_candidates, remaining_captions, layout, strategy
         )
-        if target == "figures":
-            fig_captions = remaining_captions
-        else:
-            table_captions = remaining_captions
         if figures and len(figures) > 0:
             page.figures += figures
+        if len(remaining_captions) == 0:
+            break
 
     # saving orphans
-    if len(candidates) > 0:
-        orphan_bbox = merge_candidate_bboxes(candidates)
+    if len(remaining_candidates) > 0:
+        orphan_bbox = merge_candidate_bboxes(remaining_candidates)
         page.orphan_figure = Figure(
             bbox=orphan_bbox, sweep_type="orphan", multicolumn=True, caption=None
         )
-    if len(fig_captions) > 0:
-        page.orphan_captions += fig_captions
-    if len(table_captions) > 0:
-        page.orphan_captions += table_captions
+    if len(remaining_captions) > 0:
+        page.orphan_captions += remaining_captions
 
 
 def match_orphans(pages: List[HtmlPage], layout: Layout):
