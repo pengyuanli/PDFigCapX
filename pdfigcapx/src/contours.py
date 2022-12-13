@@ -106,12 +106,20 @@ def get_potential_contours(
     for cnt in cnts:
         overlap_w_captions = 0
         for caption_box in captions:
-            overlap_w_captions += overlap_ratio_based(caption_box, cnt)
-        overlap_w_layout = overlap_ratio_based(layout.content_region, cnt)
+            intersect_bbox = caption_box.intersect(cnt)
+            if intersect_bbox is not None:
+                if cnt.x < caption_box.x:
+                    cnt.x1 = intersect_bbox.x
+                else:
+                    cnt.x = intersect_bbox.x1
+                cnt.update_width()
+            # overlap_w_captions += overlap_ratio_based(caption_box, cnt)
+        # how much the contour is inside the layout
+        overlap_w_layout = overlap_ratio_based(cnt, layout.content_region)
 
         if (
-            overlap_w_captions < 0.5
-            and overlap_w_layout < 0.2
+            # overlap_w_captions < 0.5
+            overlap_w_layout > 0.75
             and cnt.y >= layout.content_region.y - LAYOUT_MARGIN
             and cnt.height > layout.row_height
         ):

@@ -208,12 +208,12 @@ def style_cut(bbox: Bbox, caption: TextBox, sweep_type: str, layout: Layout):
         out_bbox.y = min(bbox.y, caption.y - layout.row_height)
         out_bbox.y1 += layout.row_height
     else:
-        return bbox
+        out_bbox.y1 = max(out_bbox.y1, caption.y1)
 
     out_bbox.x = x0
     out_bbox.x1 = x1
-    out_bbox.width = out_bbox.x1 - out_bbox.x
-    out_bbox.height = out_bbox.y1 - out_bbox.y
+    out_bbox.update_width()
+    out_bbox.update_height()
     return out_bbox
 
 
@@ -308,6 +308,7 @@ def calc_intersection_area(box1: Bbox, box2: Bbox):
         return w * h
 
 
+# TODO: ignore first page, find why i am not loading the figures without captions
 def greedy_swap(caption, candidates, layout):
     regions_top = estimate_caption_regions_top([caption], layout)
     regions_bottom = estimate_caption_regions_bottom([caption], layout)
@@ -315,44 +316,45 @@ def greedy_swap(caption, candidates, layout):
     overlaps = np.array([0, 0, 0])
     regions = [regions_top[0], regions_bottom[0], regions_side[0]]
 
-    bbox = None
+    bboxes = [None, None, None]
     for idx, region in enumerate(regions):
         filtered_candidates = [
             c for c in candidates if overlap_ratio_based(c, region.bbox) > 0.1
         ]
         if len(filtered_candidates) > 0:
-            bbox = merge_candidate_bboxes(filtered_candidates)
-            overlaps[idx] = calc_intersection_area(region.bbox, bbox)
+            bboxes[idx] = merge_candidate_bboxes(filtered_candidates)
+            overlaps[idx] = calc_intersection_area(region.bbox, bboxes[idx])
         else:
             overlaps[idx] = 0
     max_region_idx = overlaps.argmax()
 
-    if bbox:
+    if bboxes[max_region_idx] is not None:
         caption = regions[max_region_idx].caption
 
         figure = Figure(
-            bbox,
+            bboxes[max_region_idx],
             region.multicolumn,
             caption,
             f"unique_{max_region_idx}",
         )
+        print(figure.bbox)
         figure.identifier = regions[max_region_idx].caption.get_caption_identifier()
 
         if not is_multicol_caption(caption, layout) and max_region_idx != 2:
             if caption.x1 <= layout.col_coords[1]:
                 figure.bbox.x = layout.col_coords[0] - layout.col_coords[0] / 4
                 figure.bbox.x1 = layout.col_coords[1]
-                figure.bbox.width = figure.bbox.x1 - figure.bbox.x
+                figure.bbox.update_width()
             else:
                 figure.bbox.x = layout.col_coords[1]
                 figure.bbox.x1 = layout.content_region.x1 + layout.col_coords[0] / 4
-                figure.bbox.width = figure.bbox.x1 - figure.bbox.x
+                figure.bbox.update_width()
         else:
             if region.multicolumn and max_region_idx != 2:
                 # check versus the expanded caption
                 figure.bbox.x = layout.content_region.x
                 figure.bbox.x1 = layout.width
-                figure.bbox.width = figure.bbox.x1 - bbox.x
+                figure.bbox.update_width()
         return figure
     else:
         return None
@@ -366,7 +368,7 @@ def get_figures(
     sweep_type: str,
 ) -> Tuple[List[Figure], List[TextBox], List[Bbox]]:
 
-    print(f"pg.{page.number}", len(captions), len(candidates))
+    print(page.number)
     if len(captions) == 1 and len(candidates) > 0:
         figure = greedy_swap(captions[0], candidates, layout)
         if figure:

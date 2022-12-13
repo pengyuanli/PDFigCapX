@@ -260,10 +260,11 @@ if __name__ == "__main__":
     # parser.add_argument("filename")
     # parser.add_argument("out_data_path")
     # args = parser.parse_args()
-    base_folder = Path("/home/jtt/Documents/test_pdfigcapx")
+    # base_folder = Path("/home/jtt/Documents/test_pdfigcapx")
+    base_folder = Path("/home/jtt/pdfs/sample_wormbase")
     pdfs = [base_folder / x for x in listdir(base_folder)]
 
-    # for d in pdfs:
-    d = Path("/home/jtt/Documents/test_pdfigcapx/pmid18430929.pdf")
-    print(d.stem)
-    process_pdf(d, "/home/jtt/Documents/outputs/tests/", add_prefix=True)
+    for d in pdfs:
+        # d = Path("/home/jtt/Documents/test_pdfigcapx/pmid18430929.pdf")
+        print(d.stem)
+        process_pdf(d, "/home/jtt/Documents/outputs/tests/", add_prefix=True)

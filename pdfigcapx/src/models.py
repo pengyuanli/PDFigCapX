@@ -42,6 +42,26 @@ class Bbox:
             and self.height == other.height
         )
 
+    def update_width(self):
+        self.width = self.x1 - self.x
+
+    def update_height(self):
+        self.height = self.y1 - self.y
+
+    def intersect_area(self, other) -> float:
+        x = max(self.x, other.x)
+        y = max(self.y, other.y)
+        w = min(self.x1, other.x1) - x
+        h = min(self.y1, other.y1) - y
+        return 0.0 if (w < 0 or h < 0) else w * h
+
+    def intersect(self, other):
+        x = max(self.x, other.x)
+        y = max(self.y, other.y)
+        w = min(self.x1, other.x1) - x
+        h = min(self.y1, other.y1) - y
+        return None if (w < 0 or h < 0) else Bbox(x, y, w, h)
+
 
 def build_regex_for_caption(type="figure") -> str:
     """Helper to build regular expressions to find figure or table text in sentence.
