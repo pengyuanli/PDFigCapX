@@ -62,6 +62,16 @@ class Bbox:
         h = min(self.y1, other.y1) - y
         return None if (w < 0 or h < 0) else Bbox(x, y, w, h)
 
+    def area(self):
+        return self.width * self.height
+
+    def merge_bboxes(bboxes):
+        x0 = min([el.x for el in bboxes])
+        y0 = min([el.y for el in bboxes])
+        x1 = max([el.x1 for el in bboxes])
+        y1 = max([el.y1 for el in bboxes])
+        return Bbox(x0, y0, x1 - x0, y1 - y0)
+
 
 def build_regex_for_caption(type="figure") -> str:
     """Helper to build regular expressions to find figure or table text in sentence.
@@ -88,7 +98,8 @@ class TextBox(Bbox):
     - text: str
     """
 
-    __slots__ = ("page_number", "text")
+    __slots__ = ("id", "page_number", "text")
+    id: int
     page_number: int
     text: str
 

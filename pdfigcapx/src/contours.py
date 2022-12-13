@@ -47,7 +47,7 @@ def merge_candidate_bboxes(bboxes: List[Bbox]) -> Bbox:
     return Bbox(x0, y0, x1 - x0, y1 - y0)
 
 
-def get_potential_contours(
+def get_candidates(
     base_folder_path: str, page: HtmlPage, layout: Layout, captions: List[TextBox]
 ) -> Tuple[List[Bbox], Image.Image]:
     """Find every contour in the page that could represent a publication figure

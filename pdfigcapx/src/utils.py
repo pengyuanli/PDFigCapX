@@ -118,22 +118,42 @@ def extract_page_text_content(
     page_layout = browser.find_element(By.XPATH, "/html/body/img")
     div_components = browser.find_elements(By.CLASS_NAME, "txt")
 
+    text_boxes = []
+    captions = []
     # read with bs4 to read the text faster than div_comps[i].text
     try:
         with open(html_path.resolve(), "r") as f:
             html_content = f.read()
         soup = BeautifulSoup(html_content, "html.parser")
         divs = soup.find_all("div", class_="txt")
-        text_boxes = []
-        for comp, div in zip(div_components, divs):
-            args = {**comp.rect, "page_number": page_number, "text": div.get_text()}
-            text_boxes.append(TextBox(**args))
+        for idx, (comp, div) in enumerate(zip(div_components, divs)):
+            args = {
+                **comp.rect,
+                "id": idx,
+                "page_number": page_number,
+                "text": div.get_text(),
+            }
+            text_box = TextBox(**args)
+            if text_box.can_be_caption(type="figure"):
+                captions.append(text_box)
+            else:
+                text_boxes.append(text_box)
     except UnicodeDecodeError:
         # some html files may have conflicting characters with utf-8, in those
         # cases try to read with the text from the web components
         text_boxes = []
-        for comp in div_components:
-            args = {**comp.rect, "page_number": page_number, "text": comp.text}
+        for idx, comp in enumerate(div_components):
+            args = {
+                **comp.rect,
+                "id": idx,
+                "page_number": page_number,
+                "text": comp.text,
+            }
+            text_box = TextBox(**args)
+            if text_box.can_be_caption(type="figure"):
+                captions.append(text_box)
+            else:
+                text_boxes.append(text_box)
             text_boxes.append(TextBox(**args))
     return HtmlPage(
         name=html_path.name,
@@ -141,6 +161,7 @@ def extract_page_text_content(
         width=page_layout.size["width"],
         height=page_layout.size["height"],
         text_boxes=text_boxes,
+        captions=captions,
         number=page_number,
     )
 

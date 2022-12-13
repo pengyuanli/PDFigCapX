@@ -30,6 +30,7 @@ class HtmlPage:
         img_name: str,
         number: int,
         text_boxes: List[TextBox],
+        captions: List[TextBox],
     ):
         self.name = name
         self.width = width
@@ -37,9 +38,17 @@ class HtmlPage:
         self.img_name = img_name
         self.number = number
         self.text_boxes = text_boxes
+        self.captions = captions
         self.figures = []
         self.orphan_captions = []
         self.orphan_figure = None
+
+    def expand_captions(self, layout: Layout):
+        updated_captions = []
+        for caption in self.captions:
+            updated_caption = self._expand_caption(caption, layout)
+            updated_captions.append(updated_caption)
+        self.captions = updated_captions
 
     def find_caption_boxes(self) -> Tuple[List[TextBox], List[TextBox]]:
         """Get text boxes with text matching Table or Fig"""
@@ -52,7 +61,9 @@ class HtmlPage:
                 table_captions.append(text_box)
         return figure_captions, table_captions
 
-    def expand_caption(self, caption: TextBox, layout: Layout) -> TextBox:
+    def _expand_caption(self, caption: TextBox, layout: Layout) -> TextBox:
+        ids_to_remove = []
+
         if caption.x < layout.width / 2 and caption.x1 > layout.width / 2:
             alignment = "multicolumn"
             sentences = [
@@ -86,9 +97,13 @@ class HtmlPage:
                 # could modify width but it would be not convenient for captions
                 # surrounding images
                 new_caption.y1 = sentence.y1
-                new_caption.height = new_caption.y1 - new_caption.y
+                new_caption.update_height()
                 new_caption.text += f" {sentence.text}"
                 sweep_y = sentence.y
+
+                ids_to_remove.append(sentence.id)
             else:
                 break
+
+        self.text_boxes = [tb for tb in self.text_boxes if tb.id not in ids_to_remove]
         return new_caption

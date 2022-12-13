@@ -179,7 +179,7 @@ def calc_document_layout(pages: List[HtmlPage], threshold=30) -> Layout:
     )
 
 
-def extract(pdf_path: str, base_folder: str, size_threshold=1000):
+def extract(pdf_path: str, base_folder: str, size_threshold=1000, include_first=False):
     full_pdf_path = Path(pdf_path)
     full_base_path = Path(base_folder)
 
@@ -189,6 +189,13 @@ def extract(pdf_path: str, base_folder: str, size_threshold=1000):
     )
     pages = get_pages(Path(xpdf_folder_path))
     layout = calc_document_layout(pages)
+
+    if not include_first and len(pages) > 1:
+        pages = pages[1:]
+    else:
+        raise Exception(
+            "Trying to avoid the first page but the document has only one page"
+        )
 
     for page in pages:
         fig_captions, table_captions = page.find_caption_boxes()
