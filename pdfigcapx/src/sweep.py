@@ -1,10 +1,19 @@
 import numpy as np
-from src.models import TextBox, Layout, Region, Bbox, Figure
+from src.models import TextBox, Layout, Region, Bbox, Figure, AlignmentType
 from src.page import HtmlPage
 from src.utils import overlap_ratio_based
 from typing import List, Tuple
 from copy import copy, deepcopy
 import logging
+
+from enum import Enum
+
+
+class SweepType(Enum):
+    CAPTIONS_OVER_FIGURES = 1
+    CAPTIONS_BELOW_FIGURES = 2
+    CAPTIONS_NEXT_TO_FIGURES = 3
+
 
 NOT_SUPPORTED = (
     "skipping page: calculations do not support PDFs with more than 2 columns"
@@ -170,11 +179,7 @@ def estimate_caption_regions_side(
     return regions
 
 
-CAPTIONS_BELOW_FIGURES = "captions_below_figures"
-CAPTIONS_OVER_FIGURES = "captions_over_figures"
-
-
-def style_cut(bbox: Bbox, caption: TextBox, sweep_type: str, layout: Layout):
+def style_cut(bbox: Bbox, caption: TextBox, sweep_type: SweepType, layout: Layout):
     """Adjust the borders of the figure box in an attempt to avoid losing
     labels not captured by the contours.
     TODO: Use the y value from text components to check if there is anything
@@ -191,7 +196,7 @@ def style_cut(bbox: Bbox, caption: TextBox, sweep_type: str, layout: Layout):
         else layout.content_region.x1
     )
 
-    if sweep_type == CAPTIONS_BELOW_FIGURES:
+    if sweep_type == SweepType.CAPTIONS_BELOW_FIGURES:
         # check if there is anything above
         out_bbox.y1 = max(bbox.y1, caption.y - 1)
 
@@ -199,7 +204,7 @@ def style_cut(bbox: Bbox, caption: TextBox, sweep_type: str, layout: Layout):
             out_bbox.y = layout.content_region.y + layout.row_height
         else:
             out_bbox.y -= layout.row_height
-    elif sweep_type == CAPTIONS_OVER_FIGURES:
+    elif sweep_type == SweepType.CAPTIONS_OVER_FIGURES:
         out_bbox.y = min(bbox.y, caption.y - layout.row_height)
         out_bbox.y1 += layout.row_height
     else:
@@ -262,7 +267,12 @@ def match_figures_with_captions(
 
 
 # TODO: check greedy swap for cases where multicolumn image is taking over the right layout
-def greedy_swap(caption, candidates, layout):
+def greedy_swap(
+    page: HtmlPage, caption: TextBox, candidates: List[Bbox], layout: Layout
+):
+    """Match the caption with the region with the highest overlap between the
+    region and the candidate bounding boxes.
+    """
     regions_top = estimate_caption_regions_top([caption], layout)
     regions_bottom = estimate_caption_regions_bottom([caption], layout)
     regions_side = estimate_caption_regions_side([caption], layout, greedy=True)
@@ -279,6 +289,10 @@ def greedy_swap(caption, candidates, layout):
             overlaps[idx] = region.bbox.intersect_area(bboxes[idx])
         else:
             overlaps[idx] = 0
+
+    if page.number == 14:
+        print(candidates)
+        print(page.number, overlaps)
     max_region_idx = overlaps.argmax()
 
     if bboxes[max_region_idx] is not None:
@@ -292,24 +306,45 @@ def greedy_swap(caption, candidates, layout):
         )
         figure.identifier = regions[max_region_idx].caption.get_caption_identifier()
 
-        if not is_multicol_caption(caption, layout) and max_region_idx != 2:
-            if caption.x1 <= layout.col_coords[1]:
-                figure.bbox.x = layout.col_coords[0] - layout.col_coords[0] / 4
-                figure.bbox.x1 = layout.col_coords[1]
-                figure.bbox.update_width()
-            else:
-                figure.bbox.x = layout.col_coords[1]
-                figure.bbox.x1 = layout.content_region.x1 + layout.col_coords[0] / 4
-                figure.bbox.update_width()
-        else:
-            if region.multicolumn and max_region_idx != 2:
-                # check versus the expanded caption
-                figure.bbox.x = layout.content_region.x
-                figure.bbox.x1 = layout.width
-                figure.bbox.update_width()
+        if max_region_idx == 2:
+            figure.bbox.y = min(figure.bbox.y, caption.y - layout.row_height)
+            figure.bbox.update_height()
+            return figure
+
+        if caption.alignment == AlignmentType.LEFT:
+            figure.bbox.x = layout.content_region.x
+            figure.bbox.x1 = layout.col_coords[1]
+            figure.bbox.update_width()
+        elif caption.alignment == AlignmentType.RIGHT:
+            figure.bbox.x = layout.col_coords[1]
+            figure.bbox.x1 = max(layout.content_region.x1, figure.bbox.x1)
+            figure.bbox.update_width()
+        else:  # AlignmentType.MULTICOLUMN
+            figure.bbox.x = min(layout.content_region.x, figure.bbox.x)
+            figure.bbox.x1 = _min_any_text_to_the_right(page, figure.bbox)
+            figure.bbox.update_width()
         return figure
     else:
         return None
+
+
+def _min_any_text_to_the_right(page: HtmlPage, bbox: Bbox) -> int:
+    """For multicolumn figures, check if there is any idented text to the right.
+    It's not usual but some publications ident text with a row width smaller than
+    the regular column width
+    return:
+    right margin for the figure
+    """
+    text_boxes = [
+        tb
+        for tb in page.text_boxes
+        if tb.x > bbox.x1 and tb.y > bbox.y and tb.y1 < bbox.y1
+    ]
+    if len(text_boxes) > 0:
+        text_boxes = sorted(text_boxes, key=lambda el: el.x)
+        return text_boxes[0].x
+    else:
+        return bbox.x1
 
 
 def get_figures(
@@ -321,17 +356,17 @@ def get_figures(
 ) -> Tuple[List[Figure], List[TextBox], List[Bbox]]:
 
     if len(captions) == 1 and len(candidates) > 0:
-        figure = greedy_swap(captions[0], candidates, layout)
+        figure = greedy_swap(page, captions[0], candidates, layout)
         if figure:
             return [figure], [], []
         else:
             return [], captions, candidates
 
-    if sweep_type == "captions_below_figures":
+    if sweep_type == SweepType.CAPTIONS_BELOW_FIGURES:
         regions = estimate_caption_regions_top(captions, layout)
-    elif sweep_type == "captions_over_figures":
+    elif sweep_type == SweepType.CAPTIONS_OVER_FIGURES:
         regions = estimate_caption_regions_bottom(captions, layout)
-    elif sweep_type == "captions_next_to_figures":
+    elif sweep_type == SweepType.CAPTIONS_NEXT_TO_FIGURES:
         regions = estimate_caption_regions_side(captions, layout)
     else:
         raise Exception(f"Sweep {sweep_type} not supported")
@@ -348,10 +383,10 @@ def sweep_regions(
     table_captions: List[TextBox],
     layout: Layout,
 ):
-    sweep_strategy = [
-        ("captions_below_figures", "figures"),
-        ("captions_over_figures", "figures"),
-        ("captions_next_to_figures", "figures"),
+    sweep_strategy: List[Tuple[SweepType, str]] = [
+        (SweepType.CAPTIONS_BELOW_FIGURES, "figures"),
+        (SweepType.CAPTIONS_OVER_FIGURES, "figures"),
+        (SweepType.CAPTIONS_NEXT_TO_FIGURES, "figures"),
     ]
 
     remaining_candidates = deepcopy(candidates)

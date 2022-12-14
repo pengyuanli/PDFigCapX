@@ -1,7 +1,7 @@
 import logging
 from os import listdir, makedirs
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 from math import floor, ceil
 from shutil import rmtree
 from matplotlib.pyplot import subplots, savefig, close as plt_close
@@ -60,10 +60,13 @@ def merge_left_padded_points(
     return sorted(left_points, key=lambda x: x[1], reverse=True)
 
 
-def find_content_region(pages: List[HtmlPage], page_width: int, threshold=30):
+def find_content_region(
+    pages: List[HtmlPage], main_size: Tuple[int, int], threshold=30
+):
     """
     There may be a case when there are more rows on the right side, so use page_width to filter
     """
+    page_width, page_height = main_size
     x0s = [
         y.x
         for x in pages
@@ -83,11 +86,11 @@ def find_content_region(pages: List[HtmlPage], page_width: int, threshold=30):
     # The converted html file may have some overflowing divs due to conversion
     # errors. In case of overflow, assume a similar padding like the left side
     cr_x1 = min(page_width - cr_x0, max(x1s))
-    cand_y1s = [  # y1s constrained to other three coordinates
+    cand_y1s = [  # y1s constrained to other three coordinates and page height
         y.y1
         for x in pages
         for y in x.text_boxes
-        if y.x >= cr_x0 and y.x1 <= cr_x1 and y.y >= cr_y0
+        if y.x >= cr_x0 and y.x1 <= cr_x1 and y.y >= cr_y0 and y.y1 <= page_height
     ]
     cr_y1 = max(cand_y1s)
     cr = {"x": cr_x0, "y": cr_y0, "width": cr_x1 - cr_x0, "height": cr_y1 - cr_y0}
@@ -153,6 +156,23 @@ class Document:
                 browser.quit()
         self.pages = sorted(pages, key=lambda x: x.number)
 
+    def _calc_main_content_page_size(self) -> Tuple[int, int]:
+        sizes = []
+        for page in self.pages:
+            size = (page.width, page.height)
+            if size not in sizes:
+                sizes.append(size)
+        if len(sizes) == 1:
+            # best scenario, most common when supp material not present
+            return sizes[0]
+        elif len(sizes) == 2:
+            # main content + supp material in a different page size
+            return sizes[0]
+        else:
+            # very unusual cases where the publication has a intro page from
+            # publisher, the main content and supplementary materials.
+            return sizes[1]
+
     def calculate_layout(self) -> None:
         """Estimates the page size, number of columns, column width and height,
         and coordinates for each column
@@ -160,8 +180,8 @@ class Document:
         # use more common widths and heights to estimate row properties
         row_width, row_height = calc_row_size(self.pages, threshold=30)
         # use most common coordinates to find the publication text region
-        page_width = self.pages[0].width  # TODO: change to mode width?
-        content_region = find_content_region(self.pages, page_width, threshold=30)
+        main_size = self._calc_main_content_page_size()
+        content_region = find_content_region(self.pages, main_size, threshold=30)
 
         # number of columns
         # using page_width / row_width can fail when the publication has a lot of
@@ -181,9 +201,10 @@ class Document:
             )
             col_coords = [content_region.x, x1s[0][0]]
 
+        width, height = main_size
         self.layout = Layout(
-            width=page_width,
-            height=self.pages[0].height,
+            width=width,
+            height=height,
             row_width=row_width,
             row_height=row_height,
             content_region=content_region,
@@ -213,7 +234,7 @@ class Document:
         pages = self.pages if self.include_first_page else self.pages[1:]
 
         for idx, page in enumerate(pages):
-            candidates, _ = cnt.get_candidates(
+            candidates, _, _ = cnt.get_candidates(
                 str(self.xpdf_path), page, self.layout, page.captions
             )
             # match captions with candidates, assigned captions become figures
@@ -362,3 +383,37 @@ class Document:
                 fig_path = self.data_path / fig_name
                 extracted_fig.save(fig_path)
                 extracted_fig.close()
+
+    def debug_candidates(self, n_cols=10):
+        n_rows = ceil(len(self.pages) / n_cols)
+        fig, ax = subplots(n_rows, n_cols, dpi=300)
+        pages = []
+        pages = self.pages if self.include_first_page else self.pages[1:]
+
+        for idx, page in enumerate(pages):
+            candidates, cnts, orig_cnts = cnt.get_candidates(
+                str(self.xpdf_path), page, self.layout, page.captions
+            )
+            col = idx % n_cols
+            row = int(idx / n_cols)
+
+            page_name = page.img_name
+            png_path = (self.xpdf_path / page_name).resolve()
+            page_image = PILImage.open(png_path)
+            page_image = page_image.resize((page.width, page.height))
+
+            page_box = Bbox(1, 1, page.width, page.height)
+            draw_bboxes(ax[row][col], [page_box], "black", "none", 1.0)
+            draw_content_region(ax[row][col], self.layout.content_region)
+            draw_bboxes(ax[row][col], page.captions, "black", "black", 0.5)
+            draw_bboxes(ax[row][col], candidates, "red", "red", 0.5)
+            draw_bboxes(ax[row][col], cnts, "blue", "blue", 0.5)
+            draw_bboxes(ax[row][col], orig_cnts, "green", "green", 0.5)
+            ax[row][col].imshow(page_image)
+            ax[row][col].set_title(f"pg.{page.number}")
+            ax[row][col].axis("off")
+
+        for idx in range(len(self.pages), n_rows * n_cols):
+            col = idx % n_cols
+            row = int(idx / n_cols)
+            ax[row][col].axis("off")

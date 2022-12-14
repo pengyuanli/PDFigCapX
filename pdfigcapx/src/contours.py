@@ -19,7 +19,7 @@ from cv2 import (
 import cv2
 from numpy import ones, uint8, zeros, array
 from PIL import Image
-from copy import copy
+from copy import copy, deepcopy
 from src.page import HtmlPage
 from src.models import Bbox, Layout, TextBox
 from src.utils import overlap_ratio_based
@@ -49,7 +49,7 @@ def merge_candidate_bboxes(bboxes: List[Bbox]) -> Bbox:
 
 def get_candidates(
     base_folder_path: str, page: HtmlPage, layout: Layout, captions: List[TextBox]
-) -> Tuple[List[Bbox], Image.Image]:
+) -> Tuple[List[Bbox], List[Bbox], List[Bbox]]:
     """Find every contour in the page that could represent a publication figure
     or a section of a publication figure"""
     LAYOUT_MARGIN = 10
@@ -59,6 +59,7 @@ def get_candidates(
     page_image_gray = cvtColor(page_image, COLOR_BGR2GRAY)
     # match PNG and html sizes
     scaling = calc_scaling_factor(page_image, page.width, page.height)
+    # scaling = calc_scaling_factor(page_image, layout.width, layout.height)
 
     _, thresh = threshold(page_image_gray, 240, 255, THRESH_BINARY_INV)
     kernel = ones((5, 5), uint8)
@@ -71,6 +72,7 @@ def get_candidates(
 
     # merge contours based on multicolumn
     cnts = [scaled_bbox(el, scaling) for el in contours]
+    orig_cnts = deepcopy(cnts)
     if layout.num_cols == 2:
         idxs_groups_merge = []
         x_cross = layout.col_coords[1]
@@ -125,4 +127,4 @@ def get_candidates(
         ):
             candidate_bboxes.append(cnt)
 
-    return candidate_bboxes, cnts
+    return candidate_bboxes, cnts, orig_cnts
