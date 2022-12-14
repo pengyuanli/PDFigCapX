@@ -4,6 +4,7 @@ from src.page import HtmlPage
 from src.utils import overlap_ratio_based
 from typing import List, Tuple
 from copy import copy, deepcopy
+import logging
 
 NOT_SUPPORTED = (
     "skipping page: calculations do not support PDFs with more than 2 columns"
@@ -68,6 +69,7 @@ def estimate_caption_regions_top(
             bbox = Bbox(x, y, w, h)
             regions.append(Region(bbox, caption, is_multicol))
     else:
+        logging.info(f"{NOT_SUPPORTED}")
         print(NOT_SUPPORTED)
 
     return regions
@@ -119,6 +121,7 @@ def estimate_caption_regions_bottom(
             bbox = Bbox(x, y, w, h)
             regions.append(Region(bbox, caption, is_multicol))
     else:
+        logging.info(f"{NOT_SUPPORTED}")
         print(NOT_SUPPORTED)
 
     return regions
@@ -165,14 +168,6 @@ def estimate_caption_regions_side(
         regions.append(Region(bbox, caption, True))
 
     return regions
-
-
-def merge_candidate_bboxes(bboxes: List[Bbox]) -> Bbox:
-    x0 = min([el.x for el in bboxes])
-    y0 = min([el.y for el in bboxes])
-    x1 = max([el.x1 for el in bboxes])
-    y1 = max([el.y1 for el in bboxes])
-    return Bbox(x0, y0, x1 - x0, y1 - y0)
 
 
 CAPTIONS_BELOW_FIGURES = "captions_below_figures"
@@ -238,7 +233,7 @@ def match_figures_with_captions(
 
         if len(sparse_figures) > 1:
             # check whether region is single column, but image is multicolumn
-            bbox = merge_candidate_bboxes(bboxes)
+            bbox = Bbox.merge_bboxes(bboxes)
             bbox = style_cut(bbox, region.caption, sweep_type, layout)
 
             is_multicol = region.multicolumn
@@ -266,49 +261,7 @@ def match_figures_with_captions(
     return figures, unmatched_caption_boxes, remaining_candidates
 
 
-def expand_captions(
-    page: HtmlPage, figures: List[Figure], row_height: int, type="figure"
-) -> List[Figure]:
-    """Search in the page for the next sentences to complement the caption"""
-    for figure in figures:
-        figure.identifier = figure.caption.get_caption_identifier(type=type)
-        sentences = [
-            box
-            for box in page.text_boxes
-            if box.y > figure.caption.y and abs(figure.caption.x - box.x) < 10
-        ]
-        sentences = sorted(sentences, key=lambda x: x.y)
-        vertical = figure.caption.y1
-
-        for sentence in sentences:
-            if abs(sentence.y - vertical) < row_height:
-                figure.caption.width = (
-                    figure.caption.width
-                    if figure.caption.width >= sentence.width
-                    else sentence.width
-                )
-                figure.caption.height += sentence.height
-                # TODO: fix - symbols when breaking lines
-                figure.caption.text += f" {sentence.text}"
-                vertical = sentence.y1
-            else:
-                break
-    return figures
-
-
-def calc_intersection_area(box1: Bbox, box2: Bbox):
-    x = max(box1.x, box2.x)
-    y = max(box1.y, box2.y)
-    w = min(box1.x + box1.width, box2.x + box2.width) - x
-    h = min(box1.y + box1.height, box2.y + box2.height) - y
-
-    if w < 0 or h < 0:
-        return 0.0
-    else:
-        return w * h
-
-
-# TODO: find why i am not loading the figures without captions
+# TODO: check greedy swap for cases where multicolumn image is taking over the right layout
 def greedy_swap(caption, candidates, layout):
     regions_top = estimate_caption_regions_top([caption], layout)
     regions_bottom = estimate_caption_regions_bottom([caption], layout)
@@ -322,8 +275,8 @@ def greedy_swap(caption, candidates, layout):
             c for c in candidates if overlap_ratio_based(c, region.bbox) > 0.1
         ]
         if len(filtered_candidates) > 0:
-            bboxes[idx] = merge_candidate_bboxes(filtered_candidates)
-            overlaps[idx] = calc_intersection_area(region.bbox, bboxes[idx])
+            bboxes[idx] = Bbox.merge_bboxes(filtered_candidates)
+            overlaps[idx] = region.bbox.intersect_area(bboxes[idx])
         else:
             overlaps[idx] = 0
     max_region_idx = overlaps.argmax()
@@ -385,7 +338,6 @@ def get_figures(
     figures, remaining_captions, remaning_candidates = match_figures_with_captions(
         regions, candidates, sweep_type, layout
     )
-    # figures = expand_captions(page, figures, layout.row_height)
     return figures, remaining_captions, remaning_candidates
 
 
@@ -415,40 +367,9 @@ def sweep_regions(
 
     # saving orphans
     if len(remaining_candidates) > 0:
-        orphan_bbox = merge_candidate_bboxes(remaining_candidates)
+        orphan_bbox = Bbox.merge_bboxes(remaining_candidates)
         page.orphan_figure = Figure(
             bbox=orphan_bbox, sweep_type="orphan", multicolumn=True, caption=None
         )
     if len(remaining_captions) > 0:
         page.orphan_captions += remaining_captions
-
-
-def match_orphans(pages: List[HtmlPage], layout: Layout):
-    for (
-        idx,
-        page,
-    ) in enumerate(pages):
-        if page.orphan_figure is not None:
-            if idx < len(pages) - 1 and len(pages[idx + 1].orphan_captions) > 0:
-                # caption should be the first element in page
-                sorted_text_next_page = sorted(
-                    pages[idx + 1].text_boxes, key=lambda x: (x.x, x.y)
-                )
-                sorted_orphans = sorted(
-                    pages[idx + 1].orphan_captions, key=lambda x: (x.x, x.y)
-                )
-                if sorted_text_next_page[0].x == sorted_orphans[0].x:
-                    page.orphan_figure.caption = sorted_orphans[0]
-                    expanded_orphans = expand_captions(
-                        pages[idx + 1], [page.orphan_figure], layout.row_height
-                    )
-                    page.figures.append(expanded_orphans[0])
-                    page.orphan_figure = None
-                    # delete orphan caption?
-            else:
-                if (
-                    page.orphan_figure.bbox.x >= layout.content_region.x
-                    and page.orphan_figure.bbox.x1 <= layout.content_region.x1
-                ):
-                    page.figures.append(copy(page.orphan_figure))
-                page.orphan_figure = None

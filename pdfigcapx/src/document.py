@@ -3,7 +3,8 @@ from os import listdir, makedirs
 from pathlib import Path
 from typing import List
 from math import floor, ceil
-from matplotlib.pyplot import subplots, savefig
+from shutil import rmtree
+from matplotlib.pyplot import subplots, savefig, close as plt_close
 from PIL import Image as PILImage
 
 from src.models import Layout, Bbox, Figure
@@ -11,11 +12,16 @@ from src.page import HtmlPage
 from src.utils import launch_chromedriver, extract_page_text_content, pdf2html
 from src.draw import draw_bboxes, draw_content_region, draw_text_regions, draw_columns
 import src.contours as cnt
-import src.sweep as sweep
+from src.sweep import sweep_regions
+import src.utils as utils
 
 
 def valid_file(filename: str):
     return filename.endswith(".html") and filename.startswith("page")
+
+
+def valid_image(filename: str):
+    return filename.endswith(".png") and not filename.startswith(".")
 
 
 def calc_row_size(pages: List[HtmlPage], threshold=30):
@@ -97,27 +103,18 @@ class Document:
         pdf_path: str,
         xpdf_base_path: str,
         data_path: str,
-        log_path: str,
         include_first_page=False,
-        log_level=logging.INFO,
     ):
         self.pdf_path = Path(pdf_path)
         self.doc_name = self.pdf_path.stem
         self.include_first_page = include_first_page
         self.xpdf_base_path = Path(xpdf_base_path)
         self.data_path = Path(data_path)
-        self.log_path = Path(log_path) / "pdffigcapx.log"
 
         self.pages: List[HtmlPage] = []
         self.layout: Layout = None
 
-        logging.basicConfig(
-            filename=self.log_path.resolve(),
-            filemode="a",
-            format="%(asctime)s - %(levelname)s - %(message)s",
-            level=log_level,
-        )
-        logging.info(f"Extracting from ${self.pdf_path}")
+        logging.info(f"{self.doc_name} starting process ${self.pdf_path}")
 
         self.transform_pdf()
         self.fetch_pages()
@@ -195,6 +192,10 @@ class Document:
         )
 
     def expand_captions(self):
+        """Grab the starting caption, iterate over the text boxes not
+        assigned as captions to expand the caption into a paragraph. Finally,
+        estimate whether the caption spans over multiple columns or not.
+        """
         for page in self.pages:
             page.expand_captions(self.layout)
 
@@ -218,48 +219,64 @@ class Document:
             # match captions with candidates, assigned captions become figures
             if len(page.captions) > 0:
                 if len(candidates) > 0:
-                    sweep.sweep_regions(
-                        page, candidates, page.captions, [], self.layout
-                    )
+                    sweep_regions(page, candidates, page.captions, [], self.layout)
                 else:
-                    logging.info(
-                        f"{self.doc_name} - pg.{page.number}: captions have no candidates"
-                    )
+                    self._log_captions_without_candidates(page)
                 if page.orphan_figure is not None:
-                    logging.info(
-                        f"{self.doc_name} - pg.{page.number}: remaining orphans not matched with any caption"
-                    )
+                    self._log_remaining_orphans_not_match(page)
             else:
-                if len(candidates) > 0 and idx < len(pages) - 1:
-                    # match with captions in the next page
-                    bbox = Bbox.merge_bboxes(candidates)
-                    if bbox.area() > min_orphan_size:
-                        thres = (
-                            self.layout.content_region.x + self.layout.row_height * 1.5
-                        )
-                        captions = [c for c in pages[idx + 1].captions if c.x < thres]
-                        if len(captions) == 1:
-                            orphan_caption = captions[0]
-                            fig_identifier = captions[0].get_caption_identifier()
-                            # and remove from the captions from next page
-                            updated_captions = [
-                                c
-                                for c in pages[idx + 1].captions
-                                if c.id != orphan_caption.id
-                            ]
-                            pages[idx + 1].captions = updated_captions
-                            logging.info(
-                                f"{self.doc_name} - pg.{page.number}: matching orphan with caption {orphan_caption.text[:10]}"
-                            )
-                        else:
-                            orphan_caption = None
-                            fig_identifier = ""
-                            logging.info(
-                                f"{self.doc_name} - pg.{page.number}: adding orphan without caption"
-                            )
-                        figure = Figure(bbox, True, orphan_caption, "orphan")
-                        figure.identifier = fig_identifier
+                if len(candidates) > 0:
+                    candidates = self._match_across_pages(
+                        pages, idx, candidates, min_orphan_size
+                    )
+                    if candidates is not None:
+                        # caption not found on next page, save as orphan image
+                        bbox = Bbox.merge_bboxes(candidates)
+                        figure = Figure(bbox, True, None, "orphan")
+                        figure.identifier = ""
                         page.figures.append(figure)
+
+    def _log_captions_without_candidates(self, page):
+        logging.info(f"{self.doc_name} - pg.{page.number}: captions have no candidates")
+
+    def _log_remaining_orphans_not_match(self, page):
+        logging.info(
+            f"{self.doc_name} - pg.{page.number}: remaining orphans not matched with any caption"
+        )
+
+    def _match_across_pages(
+        self,
+        pages: List[HtmlPage],
+        page_idx: int,
+        candidates: List[Bbox],
+        min_orphan_size: int,
+    ) -> List[Bbox]:
+
+        if page_idx == len(pages) - 1:
+            # last page can't have caption on next page
+            return candidates
+        bbox = Bbox.merge_bboxes(candidates)
+        if bbox.area() < min_orphan_size:
+            # candidates too small, discard
+            return None
+        # grab captions that are just below the content region
+        thres = self.layout.content_region.x + self.layout.row_height * 1.5
+        captions = [c for c in pages[page_idx + 1].captions if c.x < thres]
+        if len(captions) != 1:
+            # no captions or too many, which idk how to handle
+            return candidates
+
+        orphan_caption = captions[0]
+        # update captions on next page by reference
+        updated_captions = [
+            c for c in pages[page_idx + 1].captions if c.id != orphan_caption.id
+        ]
+        pages[page_idx + 1].captions = updated_captions
+        figure = Figure(bbox, True, orphan_caption, "orphan")
+        figure.identifier = captions[0].get_caption_identifier()
+        pages[page_idx].figures.append(figure)
+        # assigned orphan figure to caption in next page succesfully
+        return None
 
     def draw(
         self,
@@ -309,3 +326,39 @@ class Document:
                 makedirs(self.data_path.resolve())
             output_path = self.data_path / f"{self.doc_name}.png"
             savefig(output_path, dpi=1200)
+        plt_close(fig)  # close to avoid memory leak
+
+    def _fetch_pages_as_images(self, dpi=300) -> list[PILImage.Image]:
+        """Return PDF pages as PIL Images"""
+        output_folder = self.data_path / f"{self.doc_name}_images"
+        makedirs(output_folder, exist_ok=True)
+        utils.pdf2images(self.pdf_path.resolve(), output_folder.resolve(), dpi=dpi)
+        filenames = listdir(output_folder)
+        image_names = [x for x in filenames if valid_image]
+        image_names = utils.natural_sort(image_names)
+        images = []
+        for image_name in image_names:
+            pil_image = PILImage.open(output_folder / image_name).convert("RGB")
+            pil_image.load()  # load into memory (also closes the file associated)
+            images.append(pil_image)
+        rmtree(output_folder)
+        return images
+
+    def save_images(self, dpi=300, prefix=None):
+        pil_images = self._fetch_pages_as_images(dpi)
+        str_prefix = "" if not prefix else f"{prefix}_"
+        for page, pil_image in zip(self.pages, pil_images):
+            scale = float(pil_image.size[0]) / self.layout.width
+
+            for idx, fig in enumerate(page.figures):
+                crop_box = [
+                    fig.bbox.x * scale,
+                    fig.bbox.y * scale,
+                    fig.bbox.x1 * scale,
+                    fig.bbox.y1 * scale,
+                ]
+                extracted_fig = pil_image.crop(crop_box)
+                fig_name = f"{str_prefix}{page.number}_{idx+1}.jpg"
+                fig_path = self.data_path / fig_name
+                extracted_fig.save(fig_path)
+                extracted_fig.close()

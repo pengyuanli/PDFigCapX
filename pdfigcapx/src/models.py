@@ -2,6 +2,7 @@ from typing import Optional, List, Union
 from dataclasses import dataclass, field
 from re import search as re_search
 from re import IGNORECASE
+from enum import Enum
 
 
 @dataclass()
@@ -78,14 +79,20 @@ def build_regex_for_caption(type="figure") -> str:
     We assume that the figure or table names are the first words in a caption.
     """
     if type == "figure":
-        return r"^fig*\w+ \d+\."
+        return r"^fig*[a-zA-Z.]+ ([a-zA-Z.]+)?\d+(\.)?"  # match also fig. s1.
     elif type == "table":
         return r"^table*\w+ \d+"
     else:
         raise Exception(f"Error in type {type}, we only search for a figure or table")
 
 
-@dataclass()
+class AlignmentType(Enum):
+    LEFT = 1
+    RIGHT = 2
+    MULTICOLUMN = 3
+    UNKNOWN = 4
+
+
 class TextBox(Bbox):
     """Represents a div with text in the document page. (x0,y0) is the top left
     corner while (x1,y1) is the bottom right corner.
@@ -98,10 +105,21 @@ class TextBox(Bbox):
     - text: str
     """
 
-    __slots__ = ("id", "page_number", "text")
-    id: int
-    page_number: int
-    text: str
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+        id: int,
+        page_number: int,
+        text: str,
+    ):
+        super().__init__(x, y, width, height)
+        self.id = id
+        self.page_number = page_number
+        self.text = text
+        self.alignment = AlignmentType.UNKNOWN
 
     def can_be_caption(self, type="figure") -> bool:
         """Check whether a sentence qualifies as a potential caption

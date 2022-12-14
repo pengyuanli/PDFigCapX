@@ -1,5 +1,5 @@
 from typing import List, Tuple
-from src.models import TextBox, Layout
+from src.models import TextBox, Layout, AlignmentType
 from copy import deepcopy
 
 
@@ -50,36 +50,25 @@ class HtmlPage:
             updated_captions.append(updated_caption)
         self.captions = updated_captions
 
-    def find_caption_boxes(self) -> Tuple[List[TextBox], List[TextBox]]:
-        """Get text boxes with text matching Table or Fig"""
-        table_captions = []
-        figure_captions = []
-        for text_box in self.text_boxes:
-            if text_box.can_be_caption(type="figure"):
-                figure_captions.append(text_box)
-            elif text_box.can_be_caption(type="table"):
-                table_captions.append(text_box)
-        return figure_captions, table_captions
-
     def _expand_caption(self, caption: TextBox, layout: Layout) -> TextBox:
         ids_to_remove = []
 
         if caption.x < layout.width / 2 and caption.x1 > layout.width / 2:
-            alignment = "multicolumn"
+            alignment = AlignmentType.MULTICOLUMN
             sentences = [
                 box
                 for box in self.text_boxes
                 if box.y > caption.y and abs(caption.x - box.x) < layout.row_width / 2
             ]
         elif caption.x1 < layout.width / 2:
-            alignment = "left"
+            alignment = AlignmentType.LEFT
             sentences = [
                 box
                 for box in self.text_boxes
                 if box.y > caption.y and abs(caption.x - box.x) < layout.row_width / 2
             ]
         else:
-            alignment = "right"
+            alignment = AlignmentType.RIGHT
             sentences = [
                 box
                 for box in self.text_boxes
@@ -106,4 +95,5 @@ class HtmlPage:
                 break
 
         self.text_boxes = [tb for tb in self.text_boxes if tb.id not in ids_to_remove]
+        new_caption.alignment = alignment
         return new_caption
