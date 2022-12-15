@@ -12,18 +12,19 @@ The main code for figure and caption extraction (figures_captions_list)
 
 """
 
-import subprocess
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-import sys
-import cv2
 import codecs
-import matplotlib.patches as patches
+import os
 import re
+import subprocess
+import sys
+
+import cv2
+import matplotlib.patches as patches
+import matplotlib.pyplot as plt
+import numpy as np
 from lxml import etree
-from selenium import webdriver
 from pdf_info import pdf_info
+from selenium import webdriver
 
 
 def figures_captions_list(input_path, pdf, output_path):
@@ -306,6 +307,10 @@ def fig_no_estimation(fig_info):
     return fig_no
 
 
+# cap_box, fig_box, info, table_box, text_box = box_detection(html_file_path, info, html_boxes)
+# pre_figures, cap_regions = fig_cap_matching(cap_box, fig_box, info, table_box, text_box)
+
+
 def fig_cap_matching(cap_box, fig_box, info, table_box, text_box):
     # cap_box
     # fig_box
@@ -485,13 +490,13 @@ def caption_regions(cap_box, fig_box, info):
             for cap_item in cap_sorted:
                 region = [
                     1,
-                    columns_point[0],
+                    columns_point[0],  # vertical sweep
                     info["page_width"] - 2,
                     cap_item[1] - columns_point[0],
                 ]
                 cap_regions.append([cap_item, region])
                 columns_point[0] = cap_item[1] + cap_item[3]
-            cap_regions.append(
+            cap_regions.append(  # not sure about this one, cap_item may not be defined?
                 [
                     cap_item,
                     [
@@ -507,8 +512,8 @@ def caption_regions(cap_box, fig_box, info):
             # caption parallel
             for cap_item in cap_sorted:
                 no_cross_fig = 1
-                if cap_item[2] > info["row_width"] + 50 or (
-                    cap_item[0] < info["page_width"] / 2
+                if cap_item[2] > info["row_width"] + 50 or (  # width >
+                    cap_item[0] < info["page_width"] / 2  # x0
                     and (cap_item[0] + cap_item[2]) > info["page_width"] / 2
                 ):
                     no_cross_fig = 0
@@ -541,7 +546,7 @@ def caption_regions(cap_box, fig_box, info):
                         if cap_x < columns[0] + 100:
                             region = [
                                 cap_x,
-                                columns_point[0],
+                                columns_point[0],  # is this not 1?
                                 info["row_width"],
                                 cap_y - columns_point[0],
                             ]
@@ -549,9 +554,9 @@ def caption_regions(cap_box, fig_box, info):
                         elif cap_x < columns[0] + info["row_width"] - 100:
                             region = [
                                 1,
-                                columns_point[0],
+                                columns_point[0],  # 1?
                                 columns[0] + info["row_width"],
-                                cap_y - columns_point[0],
+                                cap_y - columns_point[0],  # 1?
                             ]
                             columns_point[0] = cap_y + cap_item[3]
                         else:
@@ -566,6 +571,7 @@ def caption_regions(cap_box, fig_box, info):
 
                     cap_regions.append([cap_item, region])
             # Added to cover all area, for image below captions
+            # ## this may noy be correct, the variable is defined in the loop for every instance
             if no_cross_fig == 0:
                 region = [
                     1,

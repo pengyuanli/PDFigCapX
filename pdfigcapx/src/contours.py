@@ -16,7 +16,6 @@ from cv2 import (
     RETR_EXTERNAL,
     Mat,
 )
-import cv2
 from numpy import ones, uint8, zeros, array
 from PIL import Image
 from copy import copy, deepcopy
@@ -37,14 +36,6 @@ def calc_scaling_factor(image: Mat, page_width: int, page_height: int) -> float:
 def scaled_bbox(cnt, scaling) -> Bbox:
     cnt_bbox = boundingRect(cnt)
     return Bbox(*[int(float(x) / scaling) for x in cnt_bbox])
-
-
-def merge_candidate_bboxes(bboxes: List[Bbox]) -> Bbox:
-    x0 = min([el.x for el in bboxes])
-    y0 = min([el.y for el in bboxes])
-    x1 = max([el.x1 for el in bboxes])
-    y1 = max([el.y1 for el in bboxes])
-    return Bbox(x0, y0, x1 - x0, y1 - y0)
 
 
 def get_candidates(
@@ -72,6 +63,9 @@ def get_candidates(
 
     # merge contours based on multicolumn
     cnts = [scaled_bbox(el, scaling) for el in contours]
+    cnts = [
+        cnt for cnt in cnts if overlap_ratio_based(cnt, layout.content_region) > 0.75
+    ]
     orig_cnts = deepcopy(cnts)
     if layout.num_cols == 2:
         idxs_groups_merge = []
@@ -85,10 +79,7 @@ def get_candidates(
                 for j, cnt_eval in enumerate(cnts):
                     if cnt != cnt_eval:
                         row_region = Bbox(cr_x, cnt.y, cr_width, cnt.height)
-                        if (
-                            overlap_ratio_based(cnt_eval, row_region) > 0
-                            or overlap_ratio_based(row_region, cnt_eval) > 0
-                        ):
+                        if row_region.intersect_area(cnt_eval) > 0:
                             idxs_merge.append(j)
                 if len(idxs_merge) > 1:
                     idxs_groups_merge.append(idxs_merge)
@@ -100,13 +91,12 @@ def get_candidates(
         merged_cnts = [cnts[i] for i in idxs_not_merge]
         for idxs_group in idxs_groups_merge:
             bboxes_to_merge = [cnts[i] for i in idxs_group]
-            merged_cnts.append(merge_candidate_bboxes(bboxes_to_merge))
+            merged_cnts.append(Bbox.merge_bboxes(bboxes_to_merge))
         cnts = merged_cnts
 
     # remove scaling here
     candidate_bboxes = []  # for candidate figures or tables
     for cnt in cnts:
-        overlap_w_captions = 0
         for caption_box in captions:
             intersect_bbox = caption_box.intersect(cnt)
             if intersect_bbox is not None:
@@ -115,14 +105,9 @@ def get_candidates(
                 else:
                     cnt.x = intersect_bbox.x1
                 cnt.update_width()
-            # overlap_w_captions += overlap_ratio_based(caption_box, cnt)
-        # how much the contour is inside the layout
-        overlap_w_layout = overlap_ratio_based(cnt, layout.content_region)
 
         if (
-            # overlap_w_captions < 0.5
-            overlap_w_layout > 0.75
-            and cnt.y >= layout.content_region.y - LAYOUT_MARGIN
+            cnt.y >= layout.content_region.y - LAYOUT_MARGIN
             and cnt.height > layout.row_height
         ):
             candidate_bboxes.append(cnt)

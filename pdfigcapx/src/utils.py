@@ -155,6 +155,7 @@ def extract_page_text_content(
             else:
                 text_boxes.append(text_box)
             text_boxes.append(TextBox(**args))
+
     return HtmlPage(
         name=html_path.name,
         img_name=f"{html_path.stem}.png",

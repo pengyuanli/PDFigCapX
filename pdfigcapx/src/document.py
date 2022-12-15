@@ -7,13 +7,14 @@ from shutil import rmtree
 from matplotlib.pyplot import subplots, savefig, close as plt_close
 from PIL import Image as PILImage
 
-from src.models import Layout, Bbox, Figure
+from src.models import Bbox, Figure, Layout
 from src.page import HtmlPage
 from src.utils import launch_chromedriver, extract_page_text_content, pdf2html
 from src.draw import draw_bboxes, draw_content_region, draw_text_regions, draw_columns
 import src.contours as cnt
 from src.sweep import sweep_regions
 import src.utils as utils
+from src.layout import LayoutBuilder
 
 
 def valid_file(filename: str):
@@ -22,82 +23,6 @@ def valid_file(filename: str):
 
 def valid_image(filename: str):
     return filename.endswith(".png") and not filename.startswith(".")
-
-
-def calc_row_size(pages: List[HtmlPage], threshold=30):
-    widths = [y.width for x in pages for y in x.text_boxes if y.width > threshold]
-    heights = [y.height for x in pages for y in x.text_boxes if y.width > threshold]
-    sorted_widths = sorted(
-        [(i, widths.count(i)) for i in set(widths)], key=lambda x: x[1], reverse=True
-    )
-    sorted_heights = sorted(
-        [(i, heights.count(i)) for i in set(heights)], key=lambda x: x[1], reverse=True
-    )
-    width = sorted_widths[0][0]
-    height = sorted_heights[0][0]
-
-    return width, height
-
-
-def merge_left_padded_points(
-    sorted_points: list[tuple[int, int]], padding_threshold=10
-) -> list[tuple[int, int]]:
-    """Update the sorted counts by merging padded text elements"""
-    left_points = sorted_points.copy()
-    i = 0
-    while i < len(left_points):
-        j = i + 1
-        while j < len(left_points):
-            if abs(left_points[i][0] - left_points[j][0]) <= padding_threshold:
-                left_points[i] = (
-                    left_points[i][0],
-                    left_points[i][1] + left_points[j][1],
-                )
-                del left_points[j]
-            else:
-                j = j + 1
-        i = i + 1
-    return sorted(left_points, key=lambda x: x[1], reverse=True)
-
-
-def find_content_region(
-    pages: List[HtmlPage], main_size: Tuple[int, int], threshold=30
-):
-    """
-    There may be a case when there are more rows on the right side, so use page_width to filter
-    """
-    page_width, page_height = main_size
-    x0s = [
-        y.x
-        for x in pages
-        for y in x.text_boxes
-        if y.width > threshold and y.x < page_width / 2
-    ]
-    y0s = [y.y for x in pages for y in x.text_boxes if y.width > threshold]
-    x1s = [y.x1 for x in pages for y in x.text_boxes if y.width > threshold]
-    sorted_x0s = sorted(
-        [(i, x0s.count(i)) for i in set(x0s)], key=lambda x: x[1], reverse=True
-    )
-    sorted_x0s = merge_left_padded_points(sorted_x0s)
-
-    # content region
-    cr_x0 = sorted_x0s[0][0]
-    cr_y0 = max(0, min(y0s))
-    # The converted html file may have some overflowing divs due to conversion
-    # errors. In case of overflow, assume a similar padding like the left side
-    cr_x1 = min(page_width - cr_x0, max(x1s))
-    cand_y1s = [  # y1s constrained to other three coordinates and page height
-        y.y1
-        for x in pages
-        for y in x.text_boxes
-        if y.x >= cr_x0 and y.x1 <= cr_x1 and y.y >= cr_y0 and y.y1 <= page_height
-    ]
-    cr_y1 = max(cand_y1s)
-    cr = {"x": cr_x0, "y": cr_y0, "width": cr_x1 - cr_x0, "height": cr_y1 - cr_y0}
-    return Bbox(**cr)
-
-
-##################################################################################
 
 
 class Document:
@@ -118,10 +43,10 @@ class Document:
         self.layout: Layout = None
 
         logging.info(f"{self.doc_name} starting process ${self.pdf_path}")
-
         self.transform_pdf()
         self.fetch_pages()
-        self.calculate_layout()
+        self.layout = LayoutBuilder.build(self.pages)
+        # self.calculate_layout()
         self.expand_captions()
 
     def transform_pdf(self) -> None:
@@ -156,61 +81,8 @@ class Document:
                 browser.quit()
         self.pages = sorted(pages, key=lambda x: x.number)
 
-    def _calc_main_content_page_size(self) -> Tuple[int, int]:
-        sizes = []
-        for page in self.pages:
-            size = (page.width, page.height)
-            if size not in sizes:
-                sizes.append(size)
-        if len(sizes) == 1:
-            # best scenario, most common when supp material not present
-            return sizes[0]
-        elif len(sizes) == 2:
-            # main content + supp material in a different page size
-            return sizes[0]
-        else:
-            # very unusual cases where the publication has a intro page from
-            # publisher, the main content and supplementary materials.
-            return sizes[1]
-
-    def calculate_layout(self) -> None:
-        """Estimates the page size, number of columns, column width and height,
-        and coordinates for each column
-        """
-        # use more common widths and heights to estimate row properties
-        row_width, row_height = calc_row_size(self.pages, threshold=30)
-        # use most common coordinates to find the publication text region
-        main_size = self._calc_main_content_page_size()
-        content_region = find_content_region(self.pages, main_size, threshold=30)
-
-        # number of columns
-        # using page_width / row_width can fail when the publication has a lot of
-        # padding outside of the content region and withing columns
-        number_cols = floor(content_region.width / row_width)
-        if number_cols == 1:
-            col_coords = [content_region.x]
-        else:
-            x1s = [
-                y.x
-                for x in self.pages
-                for y in x.text_boxes
-                if y.x >= content_region.x + row_width
-            ]
-            x1s = sorted(
-                [(i, x1s.count(i)) for i in set(x1s)], key=lambda x: x[1], reverse=True
-            )
-            col_coords = [content_region.x, x1s[0][0]]
-
-        width, height = main_size
-        self.layout = Layout(
-            width=width,
-            height=height,
-            row_width=row_width,
-            row_height=row_height,
-            content_region=content_region,
-            num_cols=number_cols,
-            col_coords=col_coords,
-        )
+    def _log_no_captions_found(self):
+        logging.info(f"{self.doc_name}: no captions found")
 
     def expand_captions(self):
         """Grab the starting caption, iterate over the text boxes not
@@ -219,6 +91,9 @@ class Document:
         """
         for page in self.pages:
             page.expand_captions(self.layout)
+        total_captions = sum([len(page.captions) for page in self.pages])
+        if total_captions == 0:
+            self._log_no_captions_found
 
     def extract_figures(self, min_orphan_size=1000) -> None:
         """Traverse the pages in order and extract every figure by matching captions.

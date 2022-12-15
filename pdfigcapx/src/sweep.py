@@ -266,7 +266,6 @@ def match_figures_with_captions(
     return figures, unmatched_caption_boxes, remaining_candidates
 
 
-# TODO: check greedy swap for cases where multicolumn image is taking over the right layout
 def greedy_swap(
     page: HtmlPage, caption: TextBox, candidates: List[Bbox], layout: Layout
 ):
@@ -290,9 +289,6 @@ def greedy_swap(
         else:
             overlaps[idx] = 0
 
-    if page.number == 14:
-        print(candidates)
-        print(page.number, overlaps)
     max_region_idx = overlaps.argmax()
 
     if bboxes[max_region_idx] is not None:
@@ -306,7 +302,13 @@ def greedy_swap(
         )
         figure.identifier = regions[max_region_idx].caption.get_caption_identifier()
 
-        if max_region_idx == 2:
+        if max_region_idx == 0:  # image on top
+            # sometimes text between figure and text is not captured by
+            # the bounding box because it's not graphical content but text
+            figure.bbox.y1 = max(caption.y - layout.row_height, figure.bbox.y1)
+            # move y a bit up in case we are missing any text
+            figure.bbox.y = _max_any_text_above(page, figure.bbox, layout, caption)
+        elif max_region_idx == 2:
             figure.bbox.y = min(figure.bbox.y, caption.y - layout.row_height)
             figure.bbox.update_height()
             return figure
@@ -314,21 +316,50 @@ def greedy_swap(
         if caption.alignment == AlignmentType.LEFT:
             figure.bbox.x = layout.content_region.x
             figure.bbox.x1 = layout.col_coords[1]
-            figure.bbox.update_width()
         elif caption.alignment == AlignmentType.RIGHT:
             figure.bbox.x = layout.col_coords[1]
             figure.bbox.x1 = max(layout.content_region.x1, figure.bbox.x1)
-            figure.bbox.update_width()
         else:  # AlignmentType.MULTICOLUMN
-            figure.bbox.x = min(layout.content_region.x, figure.bbox.x)
-            figure.bbox.x1 = _min_any_text_to_the_right(page, figure.bbox)
-            figure.bbox.update_width()
+            figure.bbox.x = max(layout.content_region.x, min(figure.bbox.x, caption.x))
+            figure.bbox.x1 = _min_any_text_to_the_right(page, figure.bbox, caption)
+        figure.bbox.update_height()
+        figure.bbox.update_width()
         return figure
     else:
         return None
 
 
-def _min_any_text_to_the_right(page: HtmlPage, bbox: Bbox) -> int:
+def _max_any_text_above(
+    page: HtmlPage, bbox: Bbox, layout: Layout, caption: TextBox
+) -> int:
+    if caption.alignment == AlignmentType.RIGHT:
+        min_x = layout.col_coords[1]
+        max_x = layout.content_region.x1
+    elif caption.alignment == AlignmentType.LEFT:
+        min_x = layout.content_region.x
+        max_x = layout.col_coords[1]
+    else:
+        min_x = layout.content_region.x
+        max_x = layout.content_region.x1
+
+    text_boxes = [
+        tb
+        for tb in page.text_boxes
+        if tb.y1 < bbox.y - 2 * layout.row_height and tb.x >= min_x and tb.x1 <= max_x
+        # this last option can be better optimized, probably I need to label
+        # the text to know if it's part of a paragraph or a title to avoid them
+        and tb.width > bbox.width / 2
+    ]
+    max_y1 = None
+    if len(text_boxes) > 0:
+        text_boxes = sorted(text_boxes, key=lambda el: el.y1, reverse=True)
+        max_y1 = text_boxes[0].y1 + 1
+    else:
+        max_y1 = max(bbox.y - 5 * layout.row_height, layout.content_region.y)
+    return max_y1
+
+
+def _min_any_text_to_the_right(page: HtmlPage, bbox: Bbox, caption: TextBox) -> int:
     """For multicolumn figures, check if there is any idented text to the right.
     It's not usual but some publications ident text with a row width smaller than
     the regular column width
@@ -340,11 +371,14 @@ def _min_any_text_to_the_right(page: HtmlPage, bbox: Bbox) -> int:
         for tb in page.text_boxes
         if tb.x > bbox.x1 and tb.y > bbox.y and tb.y1 < bbox.y1
     ]
+    min_x1 = None
     if len(text_boxes) > 0:
         text_boxes = sorted(text_boxes, key=lambda el: el.x)
-        return text_boxes[0].x
+        min_x1 = text_boxes[0].x
     else:
-        return bbox.x1
+        min_x1 = bbox.x1
+    # but always consider the caption length
+    return max(caption.x1, min_x1)
 
 
 def get_figures(
