@@ -4,6 +4,7 @@ info={
 filename, height, width, page_no, figure_est_no, layout_bbox, text_mask
 }
 """
+# pylint: disable-all
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from multiprocessing import Pool, TimeoutError
