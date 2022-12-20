@@ -1,0 +1,5 @@
+{
+  
+  "python.venvPath": "../.venv",
+  "python.formatting.provider": "black"
+}

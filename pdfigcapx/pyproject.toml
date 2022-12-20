@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "pdfigcapx"
+version = "0.1.0"
+description = ""
+authors = ["Juan Trelles <juantrelles@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+pylint = "^2.15.7"
+black = "^22.10.0"
+Pillow = "^9.3.0"
+pydantic = "^1.10.2"
+selenium = "^4.7.2"
+webdriver-manager = "^3.8.5"
+ipykernel = "^6.18.3"
+matplotlib = "^3.6.2"
+opencv-python = "^4.6.0"
+beautifulsoup4 = "^4.11.1"
+cssutils = "^2.6.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+pre-commit = "^2.20.0"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

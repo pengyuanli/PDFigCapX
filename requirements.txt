@@ -1,0 +1,6 @@
+numpy
+pillow
+matplotlib
+selenium
+lxml
+opencv-python # consider headless for prod
